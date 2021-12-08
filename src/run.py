@@ -90,6 +90,9 @@ def train(model, env):
                 print(
                     f"Episode complete. Average reward: {episode_rewards[-1] / episode_lengths[-1]}"
                 )
+                print(
+                    f"\tReward: {episode_rewards[-1]}\tEpisode length: {episode_lengths[-1]}"
+                )
                 state = env.reset()
                 episode_rewards.append(0.0)
                 episode_lengths.append(0)
@@ -112,6 +115,7 @@ def train(model, env):
         if t % EVAL_STEPS == 0:
             print(f"Evaluating model after {t} steps...")
             evaluate(model, env)
+            state = env.reset()
 
 
 def main(args):
