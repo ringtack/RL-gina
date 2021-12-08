@@ -25,7 +25,7 @@ import gym
 from gym import spaces
 
 cv2.ocl.setUseOpenCL(False)
-from .wrappers import TimeLimit
+from wrappers import TimeLimit
 
 
 class NoopResetEnv(gym.Wrapper):
@@ -142,7 +142,6 @@ class MaxAndSkipEnv(gym.Wrapper):
         # Note that the observation on the done=True frame
         # doesn't matter
         max_frame = self._obs_buffer.max(axis=0)
-
         return max_frame, total_reward, done, info
 
     def reset(self, **kwargs):
@@ -321,3 +320,16 @@ def wrap_deepmind(
     if frame_stack:
         env = FrameStack(env, 4)
     return env
+
+
+def make_atari_model(
+    env_id,
+    max_episode_steps=None,
+    episode_life=True,
+    clip_rewards=True,
+    frame_stack=False,
+    scale=False,
+):
+    """Wrapper for make_atari and wrap_deepmind functions."""
+    env = make_atari(env_id, max_episode_steps=max_episode_steps)
+    return wrap_deepmind(env, episode_life, clip_rewards, frame_stack, scale)
