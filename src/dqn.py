@@ -66,14 +66,14 @@ class DDQN(Model):
         :return: A [batch_size, num_actions] matrix representing the Q-values of each action
         """
         # Convolve the input state, then split into dueling components
-        print(states.shape)
-
         filters = self.convs(states)
         value_units, advantage_units = tf.split(filters, num_or_size_splits=2, axis=3)
 
         # flatten into (batch_size, hidden_size/2)
-        value_units = tf.squeeze(value_units)
-        advantage_units = tf.squeeze(advantage_units)
+        #  value_units = tf.squeeze(value_units)
+        #  advantage_units = tf.squeeze(advantage_units)
+        value_units = tf.reshape(value_units, shape=(-1, 512))
+        advantage_units = tf.reshape(advantage_units, shape=(-1, 512))
 
         # compute advantages and values
         adv = self.advantage_net(advantage_units)
@@ -87,15 +87,6 @@ class DDQN(Model):
 ###################################################
 #####               AGENT                     #####
 ###################################################
-
-
-#  def epsilon(t):
-#  """
-#  Computes the epsilon value at a certain time step, following the linearly annealing
-#  epsilon-greedy strategy.
-#  """
-#  eps_frac = (EPSILON_END - EPSILON_START) / EPSILON_STEPS
-#  return max(EPSILON_END, EPSILON_START + t * eps_frac)
 
 
 class Agent:
@@ -127,18 +118,20 @@ class Agent:
 
         print("Experience buffer initialized...")
 
-    def optimize_model(self):
+    def update_target_net(self):
+        self.target_net.set_weights(self.q_net.get_weights())
 
+    def optimize_model(self):
         # Fetch batched memories from experience buffer
         transitions = self.experience.sample(BATCH_SIZE)
         batch = Transition(*zip(*transitions))
 
         # Get components of batches
-        state_batch = np.array(batch.state, dtype=np.float32)
-        action_batch = np.array(batch.action, dtype=np.int32)
-        reward_batch = np.array(batch.reward, dtype=np.float32)
-        next_state_batch = np.array(batch.next_state, dtype=np.float32)
-        done_batch = np.array(batch.done, dtype=np.bool)
+        state_batch = tf.convert_to_tensor(batch.state, dtype=tf.float32)
+        action_batch = tf.convert_to_tensor(batch.action, dtype=tf.int32)
+        reward_batch = tf.convert_to_tensor(batch.reward, dtype=tf.float32)
+        next_state_batch = tf.convert_to_tensor(batch.next_state, dtype=tf.float32)
+        done_batch = tf.convert_to_tensor(batch.done, dtype=tf.float32)
 
         # Find the best possible action in the next states
         max_next_actions = tf.cast(
@@ -153,7 +146,9 @@ class Agent:
         # use the best possible actions in the next state to get the target q values
         target_q_vals = self.target_net(next_state_batch)
         indexed_q_vals = tf.gather_nd(target_q_vals, indexed_actions)
-        target_q = reward_batch + GAMMA * indexed_q_vals * (1 - done_batch)
+        target_q = reward_batch + GAMMA * indexed_q_vals * (1.0 - done_batch)
+
+        #  print(done_batch)
 
         # Compute the q values of the performed action
         action_q_val = self.q_net(state_batch)
@@ -167,7 +162,7 @@ class Agent:
 
         # Rudimentary research [TODO: find some paper] suggests that Huber loss performs
         # better in error clipping
-        #  loss = tf.reduce_mean(tf.losses.huber_loss(labels=target_q, predictions=net_q))
-        loss = tf.reduce_mean(tf.keras.losses.Huber()(target_q, net_q)).numpy()
-        print(loss)
+        loss = tf.reduce_mean(tf.keras.losses.Huber()(target_q, net_q))
+        #  loss = tf.reduce_mean(tf.square(target_q - net_q))
+        print(loss.numpy())
         return loss
