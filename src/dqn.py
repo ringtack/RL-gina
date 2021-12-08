@@ -164,5 +164,5 @@ class Agent:
         # better in error clipping
         loss = tf.reduce_mean(tf.keras.losses.Huber()(target_q, net_q))
         #  loss = tf.reduce_mean(tf.square(target_q - net_q))
-        print(loss.numpy())
+        #  print("Loss:", loss.numpy())
         return loss

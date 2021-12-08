@@ -1,13 +1,27 @@
+import argparse
+import pickle
+import random
+import sys
 import time
 
 import gym
 import numpy as np
+import tensorflow as tf
 from gym.wrappers.atari_preprocessing import AtariPreprocessing
 
-from atari_wrappers import make_atari, wrap_deepmind
+from atari_wrappers import make_atari_model
+from dqn import Agent
+from settings import (
+    EPSILON_END,
+    EPSILON_START,
+    EPSILON_STEPS,
+    EVAL_STEPS,
+    NUM_EPISODES,
+    TARGET_UPDATE,
+)
 
 
-def make_atari_model(
+def openai_atari_model(
     env_id,
     noop_max=30,
     frame_skip=4,
@@ -29,21 +43,33 @@ def make_atari_model(
     )
 
 
-def time_env(env, num_iters=250):
+def time_env(model, env, num_iters=250):
     #  env.render()
 
     times = []
+    model.initialize_experiences(env)
 
     for i in range(num_iters):
         t0 = time.time()
         done = False
-        env.reset()
+        state = env.reset()
+        t = 0
         while not done:
-            #  env.render()
-            _, _, done, _ = env.step(env.action_space.sample())
+            tf_state = tf.convert_to_tensor(state, dtype=np.float32)
+            tf_state = tf.expand_dims(tf_state, 0)
+            action_qvals = model.q_net(tf_state)
+            action = tf.cast(tf.math.argmax(action_qvals, 1), tf.int32).numpy()[0]
+
+            _, _, done, _ = env.step(action)
+            t += 1
+
+            if t % 10 == 0:
+                loss = model.optimize_model()
 
         t1 = time.time()
         times.append(t1 - t0)
+
+        print(f"Episode length: {t}\tTime: {t1-t0}")
 
         if i % 50 == 0:
             print(f"Sum: {sum(times)}, Len: {len(times)}")
@@ -54,15 +80,15 @@ def time_env(env, num_iters=250):
 
 name = "SpaceInvaders"
 env_id = f"{name}NoFrameskip-v4"
-env = make_atari_model(env_id, terminal_on_life_loss=True)
+#  env = make_atari_model(env_id, terminal_on_life_loss=True)
 
-print("Built-in Gym Preprocessor: ")
-time_env(env)
+#  print("Built-in Gym Preprocessor: ")
+#  time_env(env)
 
-print()
+#  print()
 
-env = make_atari(env_id)
-env = wrap_deepmind(env)
+env = make_atari_model(env_id)
+model = Agent(env.action_space.n)
 
 print("Local Atari/DeepMind Preprocessor: ")
-time_env(env)
+time_env(model, env)

@@ -16,6 +16,7 @@ from settings import (
     EPSILON_START,
     EPSILON_STEPS,
     EVAL_STEPS,
+    LEARNING_FREQ,
     NUM_EPISODES,
     TARGET_UPDATE,
 )
@@ -71,32 +72,39 @@ def train(model, env):
                 # Exploration
                 action = env.action_space.sample()
             else:
+                # Exploitation
                 tf_state = tf.convert_to_tensor(state, dtype=np.float32)
                 tf_state = tf.expand_dims(tf_state, 0)
                 action_qvals = model.q_net(tf_state)
                 action = tf.cast(tf.math.argmax(action_qvals, 1), tf.int32).numpy()[0]
 
+            # Get next state, and add to experience buffer
             next_state, reward, done, _ = env.step(action)
             model.remember(state, action, reward, next_state, done)
             state = next_state
 
+            # Update episode reward and length; if done, reset game
             episode_rewards[-1] += reward
             episode_lengths[-1] += 1
             if done:
+                print(
+                    f"Episode complete. Average reward: {episode_rewards[-1] / episode_lengths[-1]}"
+                )
                 state = env.reset()
                 episode_rewards.append(0.0)
                 episode_lengths.append(0)
 
-            loss = model.optimize_model()
+            if t % LEARNING_FREQ == 0:
+                loss = model.optimize_model()
+                print(f"Loss at {t} steps:", loss)
 
-        # Only learn the Q network; the target network is set, and not learned
-        gradients = tape.gradient(loss, model.q_net.trainable_variables)
-        model.optimizer.apply_gradients(zip(gradients, model.q_net.trainable_variables))
-
-        if len(episode_lengths) % 100 == 0:
-            print(
-                f"Current average episode reward: {sum(episode_rewards) / len(episode_rewards)}"
+        if t % LEARNING_FREQ == 0:
+            # Only learn the Q network; the target network is set, and not learned
+            gradients = tape.gradient(loss, model.q_net.trainable_variables)
+            model.optimizer.apply_gradients(
+                zip(gradients, model.q_net.trainable_variables)
             )
+
         if t % TARGET_UPDATE == 0:
             print(f"Updating target net after {t} steps...")
             model.update_target_net()
@@ -133,6 +141,7 @@ if __name__ == "__main__":
         "--env",
         action="store",
         default="SpaceInvaders",
+        #  default="CartPole",
         help="Atari game (supported games: Pong, Cartpole, SpaceInvaders, Breakout, BeamRider)",
     )
     parser.add_argument(
