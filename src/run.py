@@ -129,7 +129,7 @@ def train(model, env1, env2):
                 print(
                     f"\tReward: {episode_rewards1[-1]}\tEpisode length: {episode_lengths1[-1]}"
                 )
-                state = env1.reset()
+                state1 = env1.reset()
                 episode_rewards1.append(0.0)
                 episode_lengths1.append(0)
 
@@ -142,7 +142,7 @@ def train(model, env1, env2):
                 print(
                     f"\tReward: {episode_rewards2[-1]}\tEpisode length: {episode_lengths2[-1]}"
                 )
-                state = env2.reset()
+                state2 = env2.reset()
                 episode_rewards2.append(0.0)
                 episode_lengths2.append(0)
 
@@ -198,14 +198,14 @@ if __name__ == "__main__":
     parser.add_argument(
         "--env1",
         action="store",
-        default="SpaceInvaders",
+        default="DemonAttack",
         #  default="CartPole",
         help="Atari game (supported games: Pong, Cartpole, SpaceInvaders, Breakout, BeamRider)",
     )
     parser.add_argument(
         "--env2",
         action="store",
-        default="DemonAttack",
+        default="SpaceInvaders",
         #  default="CartPole",
         help="Atari game (supported games: Pong, Cartpole, SpaceInvaders, Breakout, BeamRider)",
     )
