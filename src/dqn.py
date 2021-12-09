@@ -17,7 +17,6 @@ from settings import (
     GAMMA,
     LEARNING_RATE,
     NUM_EPISODES,
-    SCREEN_WIDTH,
 )
 
 
@@ -55,8 +54,6 @@ class DDQN(Model):
         self.advantage_net = Dense(self.num_actions, input_shape=(hidden / 2,))
         self.value_net = Dense(1, input_shape=(hidden / 2,))
 
-        self.flattener = Flatten()
-
     def call(self, states):
         """
         Given input states (preferably stacked frames), performs a forward pass to estimate
@@ -89,17 +86,46 @@ class DDQN(Model):
 ###################################################
 
 
+def epsilon(t):
+    """
+    Computes the epsilon value at a certain time step, following the linearly annealing
+    epsilon-greedy strategy.
+    """
+    eps_frac = (EPSILON_END - EPSILON_START) / EPSILON_STEPS
+    return max(EPSILON_END, EPSILON_START + t * eps_frac)
+
+
 class Agent:
-    def __init__(self, num_actions):
+    def __init__(self, env, num_actions):
+        self.env = env
         self.num_actions = num_actions
+
         self.q_net = DDQN(num_actions)
         self.target_net = DDQN(num_actions)
         self.optimizer = Adam(learning_rate=LEARNING_RATE)
         self.experience = ExperienceBuffer(BUFFER_SIZE)
-        self.steps = 0
 
     def remember(self, *args):
         self.experience.remember(*args)
+
+    def act(self, state, t):
+        """
+        Follow epsilon-greedy exploration to balance exploration-exploitation tradeoff
+        """
+        eps = epsilon(t)
+        sample = random.random()
+
+        if sample < eps:
+            # Exploration
+            action = self.env.action_space.sample()
+        else:
+            # Exploitation
+            tf_state = tf.convert_to_tensor(state, dtype=np.float32)
+            tf_state = tf.expand_dims(tf_state, 0)
+            action_qvals = self.q_net(tf_state)
+            action = tf.cast(tf.math.argmax(action_qvals, 1), tf.int32).numpy()[0]
+
+        return action
 
     def initialize_experiences(self, env):
         """
@@ -148,8 +174,6 @@ class Agent:
         indexed_q_vals = tf.gather_nd(target_q_vals, indexed_actions)
         target_q = reward_batch + GAMMA * indexed_q_vals * (1.0 - done_batch)
 
-        #  print(done_batch)
-
         # Compute the q values of the performed action
         action_q_val = self.q_net(state_batch)
         net_q = tf.reduce_sum(
@@ -162,7 +186,9 @@ class Agent:
 
         # Rudimentary research [TODO: find some paper] suggests that Huber loss performs
         # better in error clipping
-        loss = tf.reduce_mean(tf.keras.losses.Huber()(target_q, net_q))
         #  loss = tf.reduce_mean(tf.square(target_q - net_q))
-        #  print("Loss:", loss.numpy())
-        return loss
+        #  def loss(y_true, y_pred):
+        #  """Final loss construction to be compiled"""
+        return tf.reduce_mean(tf.keras.losses.Huber()(target_q, net_q))
+
+        #  return loss

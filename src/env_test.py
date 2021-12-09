@@ -8,6 +8,7 @@ import gym
 import numpy as np
 import tensorflow as tf
 from gym.wrappers.atari_preprocessing import AtariPreprocessing
+from PIL import Image
 
 from atari_wrappers import make_atari_model
 from dqn import Agent
@@ -21,40 +22,27 @@ from settings import (
 )
 
 
-def openai_atari_model(
-    env_id,
-    noop_max=30,
-    frame_skip=4,
-    screen_size=84,
-    terminal_on_life_loss=False,
-    grayscale_obs=True,
-    scale_obs=False,
-):
+def openai_atari_model(env_id):
     assert "NoFrameskip" in env_id
-    env = gym.make(env_id)
-    return AtariPreprocessing(
-        env,
-        noop_max=noop_max,
-        frame_skip=frame_skip,
-        screen_size=screen_size,
-        terminal_on_life_loss=terminal_on_life_loss,
-        grayscale_obs=grayscale_obs,
-        scale_obs=scale_obs,
-    )
+    n_env = gym.make(env_id)
+    return AtariPreprocessing(n_env)
 
 
-def time_env(model, env, num_iters=250):
+def time_env(model, env, num_iters=10):
     #  env.render()
-
     times = []
     model.initialize_experiences(env)
 
     for i in range(num_iters):
+        frames = []
+
         t0 = time.time()
+
         done = False
         state = env.reset()
         t = 0
         while not done:
+            frames.append(Image.fromarray(env.render(mode="rgb_array")))
             tf_state = tf.convert_to_tensor(state, dtype=np.float32)
             tf_state = tf.expand_dims(tf_state, 0)
             action_qvals = model.q_net(tf_state)
@@ -68,13 +56,20 @@ def time_env(model, env, num_iters=250):
 
         t1 = time.time()
         times.append(t1 - t0)
-
         print(f"Episode length: {t}\tTime: {t1-t0}")
+
+        with open("./gifs/test.gif", "wb+") as f:
+            im = frames[0]
+            im.save(
+                f, save_all=True, optimize=True, duration=30, append_images=frames[1:]
+            )
+
+        t2 = time.time()
+        print(f"Time to write gif: {t2 - t1}")
 
         if i % 50 == 0:
             print(f"Sum: {sum(times)}, Len: {len(times)}")
             print(f"Current average: {sum(times) / len(times)}")
-
     print(f"Average over {num_iters} attempts: {sum(times) / len(times)}")
 
 
@@ -88,7 +83,21 @@ env_id = f"{name}NoFrameskip-v4"
 #  print()
 
 env = make_atari_model(env_id)
-model = Agent(env.action_space.n)
+model = Agent(env, env.action_space.n)
 
 print("Local Atari/DeepMind Preprocessor: ")
 time_env(model, env)
+
+
+#  frames = []
+#  done = False
+
+#  state = env.reset()
+
+#  while not done:
+#  frames.append(Image.fromarray(env.render(mode="rgb_array")))
+#  _, _, done, _ = env.step(env.action_space.sample())
+
+#  with open("./gifs/test.gif", "wb+") as f:
+#  im = frames[0]
+#  im.save(f, save_all=True, append_images=frames[1:])
