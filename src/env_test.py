@@ -20,6 +20,7 @@ from settings import (
     TARGET_UPDATE,
 )
 
+tf.config.list_physical_devices('GPU')
 
 def openai_atari_model(
     env_id,
