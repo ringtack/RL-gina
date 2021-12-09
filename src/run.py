@@ -10,12 +10,14 @@ import numpy as np
 import tensorflow as tf
 from gym.wrappers.atari_preprocessing import AtariPreprocessing
 from PIL import Image
+from tensorflow.keras.models import model_from_json
 
 from atari_wrappers import make_atari_model
 from dqn import DDQN, Agent
 from settings import (
     BATCH_SIZE,
     EPSILON_END,
+    EPSILON_STEPS,
     EVAL_STEPS,
     LEARNING_FREQ,
     NUM_EPISODES,
@@ -68,35 +70,56 @@ def save_model(model, t, weight_dir, weight_name):
     """
     Saves weights and experiences to the specified file location.
     """
-    filename = f"{weight_dir}/{weight_name}-{t}.h5"
-    model.q_net.save_weights(filename)
-    print(f"Saved model to {filename}.")
-    pickled_filename = f"{weight_dir}/{weight_name}-{t}.pickle"
+    filename = f"{weight_dir}/{weight_name}-{t}"
+
+    # attempt with json
+    #  with open(f"{filename}.json", "w+") as json_file:
+    #  json_file.write(model.q_net.to_json())
+    #  print(f"Saved model json to {filename}.json.")
+
+    model.q_net.save_weights(f"{filename}.h5")
+    print(f"Saved model weights to {filename}.h5.")
+    pickled_filename = f"{filename}.pickle"
     with open(pickled_filename, "wb+") as f:
         pickle.dump([model.experience, t], f)
     print(f"Saved experience to {pickled_filename}.")
     return filename, pickled_filename
 
 
-def load_model(filename, env):
+def load_model(filename, env, exp, stack):
     """
     Loads weights and experiences from specified file. Do not include extensions!
     """
-    model = Agent(env, env.action_space.n)
-    #  model.q_net = DDQN(env.action_space.n)
-    # Prime the model for loading I guess lol
-    model.q_net.build((None, 84, 84, 4))
-    #  model.q_net(np.zeros((BATCH_SIZE, 84, 84, 4)))
-    # Load model
-    model.q_net.load_weights(f"{filename}.h5")
+    model = Agent(env, stack)
+
+    print(f"Loading model from {filename}...")
+    # Load model json
+    #  with open(f"{filename}.json", "r") as json_file:
+    #  loaded_model_json = json_file.read()
+    #  model.q_net = model_from_json(loaded_model_json)
+    #  print(f"Loaded model json from {filename}.json.")
+
     #  model.q_net.set_weights(tf.keras.models.load_weights(f"{filename}.h5"))
+
+    if exp:
+        with open(f"{filename}.pickle", "rb") as p_f:
+            model.experience, steps = pickle.load(p_f)
+        print(f"Loaded experience from {filename}.pickle.")
+    else:
+        print("Experience buffer not found. Initializing...")
+        model.initialize_experiences(env)
+
+    # Try to initialize the net
+    model.optimize_model()
+    #  model.q_net(np.zeros((1, 84, 84, 4)))
+
+    # Load model weights
+    model.q_net.load_weights(f"{filename}.h5")
+
     print(f"Loaded model weights from {filename}.h5:")
-    model.summary()
-    with open(f"{filename}.pickle", "rb") as p_f:
-        model.experience, steps = pickle.load(p_f)
-    print(f"Loaded experience from {filename}.pickle.")
-    #  return model, steps
-    return model, 1
+    model.q_net.summary()
+
+    return model, steps if exp else 1
 
 
 def save_rewards(episode_rewards, episode_lengths, rwd_dir, rwd_name):
@@ -108,7 +131,7 @@ def save_rewards(episode_rewards, episode_lengths, rwd_dir, rwd_name):
         print(f"Saved current rewards to {filename}.")
 
 
-def train(model, env, eval_env, args, steps, vid=True):
+def train(model, env, eval_env, steps, args, vid=True):
     weight_dir = args.weight_dir
     weight_name = args.weight_name
     vid_dir = args.vid_dir
@@ -116,14 +139,14 @@ def train(model, env, eval_env, args, steps, vid=True):
     rwd_dir = args.rwd_dir
     rwd_name = args.rwd_name
     # Initialize experience buffer if not already
-    if steps == 1:
+    if steps == 1 and len(model.experience) < model.experience.capacity:
         model.initialize_experiences(env)
     # Store episode rewards and lengths
     episode_rewards = [0.0]
     episode_lengths = [0]
 
     # Provide constant csv writer for evaluation
-    eval_writer = csv.writer(f"{rwd_dir}/{rwd_name}-evals.csv", "w+", newline="")
+    eval_writer = csv.writer(open(f"{rwd_dir}/{rwd_name}-evals.csv", "w+", newline=""))
     eval_writer.writerow(["episode_rewards", "episode_lengths"])
 
     # Store max reward; if we want to store video, store frames as well
@@ -133,6 +156,7 @@ def train(model, env, eval_env, args, steps, vid=True):
 
     # Start training! Train for NUM_EPISODES steps
     state = env.reset()
+
     for t in range(steps, NUM_EPISODES + 1):
         # Handle keyboard interrupt
         try:
@@ -208,27 +232,31 @@ def train(model, env, eval_env, args, steps, vid=True):
                 eval_writer.writerow([reward, length])
         except KeyboardInterrupt:
             save_model(model, t, weight_dir, weight_name)
-            break
+            sys.exit(1)
 
 
 def main(args):
     print(args)
     env_id = f"{args.env}NoFrameskip-v4"
-    env = make_atari_model(env_id, clip_rewards=False)
-    eval_env = make_atari_model(env_id, clip_rewards=False, episode_life=False)
+    env = make_atari_model(env_id, clip_rewards=False, frame_stack=args.stack)
+    eval_env = make_atari_model(
+        env_id, clip_rewards=False, episode_life=False, frame_stack=args.stack
+    )
 
     if args.load:
-        model, steps = load_model(args.load, env)
+        model, steps = load_model(args.load, env, args.exp, args.stack)
     else:
-        model = Agent(env, env.action_space.n)
+        model = Agent(env, args.stack)
         steps = 1
 
     print("Starting training...")
     train(model, env, eval_env, steps, args)
     print(f"Training done. Evaluating after {NUM_EPISODES} steps...")
 
-    reward, length = evaluate(model, env, args.vid_dir, args.vid_name, "END")
-    print(f"Reward: {reward}\tEpisode Length: {length}")
+    print("Type anything to evaluate model (EOF to exit)")
+    for _ in sys.stdin:
+        reward, length = evaluate(model, eval_env, args.vid_dir, args.vid_name, "END")
+        print(f"Reward: {reward}\tEpisode Length: {length}")
 
 
 if __name__ == "__main__":
@@ -289,5 +317,11 @@ if __name__ == "__main__":
     )
 
     parser.add_argument("--load", action="store", default="", help="Load model")
+    parser.add_argument(
+        "--exp", action="store_true", default=False, help="Load experience"
+    )
+    parser.add_argument(
+        "--stack", action="store_true", default=False, help="Frame stack"
+    )
 
     main(parser.parse_args())

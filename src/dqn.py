@@ -24,7 +24,7 @@ from settings import (
 #####             DDQN MODEL                  #####
 ###################################################
 class DDQN(Model):
-    def __init__(self, num_actions):
+    def __init__(self, num_actions, stack):
         """
         A classic implementation of the Nature DDQN for visual reinforcement learning tasks. We
         base our implementation off of
@@ -40,10 +40,12 @@ class DDQN(Model):
         super().__init__()
 
         self.hidden = 1024
+        self.depth = 4 if stack else 1
         self.num_actions = num_actions
 
         self.convs = Sequential(
             [
+                Input(shape=(84, 84, self.depth)),
                 Conv2D(filters=32, kernel_size=8, strides=4, activation="relu"),
                 Conv2D(filters=64, kernel_size=4, strides=2, activation="relu"),
                 Conv2D(filters=64, kernel_size=3, strides=1, activation="relu"),
@@ -98,12 +100,12 @@ def epsilon(t):
 
 
 class Agent:
-    def __init__(self, env, num_actions):
+    def __init__(self, env, stack):
         self.env = env
-        self.num_actions = num_actions
+        self.num_actions = env.action_space.n
 
-        self.q_net = DDQN(num_actions)
-        self.target_net = DDQN(num_actions)
+        self.q_net = DDQN(self.num_actions, stack)
+        self.target_net = DDQN(self.num_actions, stack)
         self.optimizer = Adam(learning_rate=LEARNING_RATE)
         self.experience = ExperienceBuffer(BUFFER_SIZE)
 
