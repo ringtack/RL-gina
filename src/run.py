@@ -40,17 +40,17 @@ def epsilon(t):
 def evaluate(model, env1, env2):
     state = env1.reset()
     env1.render()
-    done = False
+    done1 = False
 
     reward = 0.0
     t = 0
-    while not done:
+    while not done1:
         tf_state = tf.convert_to_tensor(state, dtype=np.float32)
         tf_state = tf.expand_dims(tf_state, 0)
         print(tf_state)
         action_qvals = model.q_net(tf_state)
         action = tf.cast(tf.math.argmax(action_qvals, 1), tf.int32).numpy()[0]
-        state, rwd, done, _ = env1.step(action)
+        state, rwd, done1, _ = env1.step(action)
         reward += rwd
         t += 1
         env1.render()
@@ -58,17 +58,17 @@ def evaluate(model, env1, env2):
 
     state = env2.reset()
     env2.render()
-    done = False
+    done2 = False
 
     reward = 0.0
     t = 0
-    while not done:
+    while not done2:
         tf_state = tf.convert_to_tensor(state, dtype=np.float32)
         tf_state = tf.expand_dims(tf_state, 0)
         print(tf_state)
         action_qvals = model.q_net(tf_state)
         action = tf.cast(tf.math.argmax(action_qvals, 1), tf.int32).numpy()[0]
-        state, rwd, done, _ = env2.step(action)
+        state, rwd, done2, _ = env2.step(action)
         reward += rwd
         t += 1
         env2.render()
@@ -164,8 +164,8 @@ def train(model, env1, env2):
         if t % EVAL_STEPS == 0:
             print(f"Evaluating model after {t} steps...")
             evaluate(model, env1, env2)
-            state = env1.reset()
-            state = env2.reset()
+            state1 = env1.reset()
+            state2 = env2.reset()
 
 
 def main(args):
