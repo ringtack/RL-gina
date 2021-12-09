@@ -89,10 +89,10 @@ def train(model, env):
             episode_lengths[-1] += 1
             if done:
                 print(
-                    f"Episode complete. Average reward: {episode_rewards[-1] / episode_lengths[-1]}"
+                    "Episode complete. Average reward: {episode_rewards[-1] / episode_lengths[-1]}"
                 )
                 print(
-                    f"\tReward: {episode_rewards[-1]}\tEpisode length: {episode_lengths[-1]}"
+                    "\tReward: {episode_rewards[-1]}\tEpisode length: {episode_lengths[-1]}"
                 )
                 state = env.reset()
                 episode_rewards.append(0.0)
@@ -100,7 +100,7 @@ def train(model, env):
 
             if t % LEARNING_FREQ == 0:
                 loss = model.optimize_model()
-                print(f"Loss at {t} steps:", loss)
+                print("Loss at {t} steps:", loss)
 
         if t % LEARNING_FREQ == 0:
             # Only learn the Q network; the target network is set, and not learned
@@ -110,24 +110,24 @@ def train(model, env):
             )
 
         if t % TARGET_UPDATE == 0:
-            print(f"Updating target net after {t} steps...")
+            print("Updating target net after {t} steps...")
             model.update_target_net()
 
         if t % EVAL_STEPS == 0:
-            print(f"Evaluating model after {t} steps...")
+            print("Evaluating model after {t} steps...")
             evaluate(model, env)
             state = env.reset()
 
 
 def main(args):
     print(args)
-    env_id = f"{args.env}NoFrameskip-v4"
+    env_id = "{args.env}NoFrameskip-v4"
     env = make_atari_model(env_id)
     model = Agent(env.action_space.n)
 
     print("Starting training...")
     train(model, env)
-    print(f"Training done. Evaluating after {NUM_EPISODES} steps...")
+    print("Training done. Evaluating after {NUM_EPISODES} steps...")
     evaluate(model, env)
 
 
