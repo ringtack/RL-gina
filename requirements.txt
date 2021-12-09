@@ -1,4 +1,6 @@
-gym==0.17.2
-numpy==1.17.3
-opencv_python==4.5.4.60
-tensorflow==2.3.0
+numpy
+gym
+keras
+matplotlib
+opencv-python
+tensorflow-gpu

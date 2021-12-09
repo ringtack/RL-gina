@@ -47,6 +47,7 @@ def evaluate(model, env):
     while not done:
         tf_state = tf.convert_to_tensor(state, dtype=np.float32)
         tf_state = tf.expand_dims(tf_state, 0)
+        print(tf_state)
         action_qvals = model.q_net(tf_state)
         action = tf.cast(tf.math.argmax(action_qvals, 1), tf.int32).numpy()[0]
         state, rwd, done, _ = env.step(action)
@@ -75,6 +76,7 @@ def train(model, env):
                 # Exploitation
                 tf_state = tf.convert_to_tensor(state, dtype=np.float32)
                 tf_state = tf.expand_dims(tf_state, 0)
+                print(tf_state)
                 action_qvals = model.q_net(tf_state)
                 action = tf.cast(tf.math.argmax(action_qvals, 1), tf.int32).numpy()[0]
 
