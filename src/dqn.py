@@ -39,7 +39,7 @@ class DDQN(Model):
         """
         super().__init__()
 
-        hidden = 1024
+        self.hidden = 1024
         self.num_actions = num_actions
 
         self.convs = Sequential(
@@ -47,12 +47,14 @@ class DDQN(Model):
                 Conv2D(filters=32, kernel_size=8, strides=4, activation="relu"),
                 Conv2D(filters=64, kernel_size=4, strides=2, activation="relu"),
                 Conv2D(filters=64, kernel_size=3, strides=1, activation="relu"),
-                Conv2D(filters=hidden, kernel_size=7, strides=1, activation="relu"),
+                Conv2D(
+                    filters=self.hidden, kernel_size=7, strides=1, activation="relu"
+                ),
             ]
         )
 
-        self.advantage_net = Dense(self.num_actions, input_shape=(hidden / 2,))
-        self.value_net = Dense(1, input_shape=(hidden / 2,))
+        self.advantage_net = Dense(self.num_actions, input_shape=(self.hidden / 2,))
+        self.value_net = Dense(1, input_shape=(self.hidden / 2,))
 
     def call(self, states):
         """
