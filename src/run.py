@@ -131,13 +131,27 @@ def save_rewards(episode_rewards, episode_lengths, rwd_dir, rwd_name):
         print(f"Saved current rewards to {filename}.")
 
 
-def train(model, env, eval_env, steps, args, vid=True):
+def avg_q(model, viz_states):
+    viz_states_batch = tf.convert_to_tensor(viz_states, dtype=tf.float32)
+    q_vals = model.q_net(viz_states_batch)
+    print(
+        f"\t\tAverage Q values: {tf.reduce_mean(tf.reduce_sum(q_vals,axis=1)).numpy()}."
+    )
+    return tf.reduce_mean(tf.reduce_sum(q_vals, axis=1)).numpy()
+
+
+def train(model, env, eval_env, steps, args, viz_states, vid=True):
+    # Load args names
     weight_dir = args.weight_dir
     weight_name = args.weight_name
     vid_dir = args.vid_dir
     vid_name = args.vid_name
     rwd_dir = args.rwd_dir
     rwd_name = args.rwd_name
+    viz_dir = args.viz_dir
+    viz_name = args.viz_name
+    td_name = args.td_loss
+
     # Initialize experience buffer if not already
     if steps == 1 and len(model.experience) < model.experience.capacity:
         model.initialize_experiences(env)
@@ -148,6 +162,14 @@ def train(model, env, eval_env, steps, args, vid=True):
     # Provide constant csv writer for evaluation
     eval_writer = csv.writer(open(f"{rwd_dir}/{rwd_name}-evals.csv", "w+", newline=""))
     eval_writer.writerow(["episode_rewards", "episode_lengths"])
+
+    # Write average Q-values to csv file
+    viz_writer = csv.writer(open(f"{viz_dir}/{viz_name}.csv", "w+", newline=""))
+    viz_writer.writerow(["episode", "average q_values"])
+
+    # Write losses to csv file
+    td_writer = csv.writer(open(f"{viz_dir}/{td_name}.csv", "w+", newline=""))
+    td_writer.writerow(["step", "loss value"])
 
     # Store max reward; if we want to store video, store frames as well
     max_reward = 0.0
@@ -195,7 +217,7 @@ def train(model, env, eval_env, steps, args, vid=True):
                         max_reward = episode_rewards[-1]
                         # If we want, save gif of max reward
                         if vid:
-                            filename = f"{vid_dir}/max_reward.gif"
+                            filename = f"{vid_dir}/{vid_name}_max.gif"
                             with open(filename, "wb+") as f:
                                 im = frames[0]
                                 im.save(
@@ -205,15 +227,29 @@ def train(model, env, eval_env, steps, args, vid=True):
                                     duration=40,
                                     append_images=frames[1:],
                                 )
-                                print(f"New record! Saved to {filename}.")
+                                print(
+                                    "=============================================================================="
+                                )
+                                print(
+                                    f"==========New record! Saved to {filename}.=========="
+                                )
+                                print(
+                                    "=============================================================================="
+                                )
                     if vid:
                         frames = []
+
+                    viz_writer.writerow(
+                        [len(episode_rewards), avg_q(model, viz_states)]
+                    )
                     episode_rewards.append(0.0)
                     episode_lengths.append(0)
                 if t % LEARNING_FREQ == 0:
                     loss = model.optimize_model()
+                    if t % (LEARNING_FREQ * 10) == 0:
+                        td_writer.writerow([t, loss.numpy()])
                     if t % (LEARNING_FREQ * 50) == 0:
-                        print(f"Loss at {t} steps:", loss)
+                        print(f"Loss at step {t}: {loss.numpy()}")
 
             if t % LEARNING_FREQ == 0:
                 # Only learn the Q network; the target network is set, and not learned
@@ -235,6 +271,11 @@ def train(model, env, eval_env, steps, args, vid=True):
             sys.exit(1)
 
 
+def load_states(state_file):
+    with open(state_file, "rb") as p_f:
+        return pickle.load(p_f)
+
+
 def main(args):
     print(args)
     env_id = f"{args.env}NoFrameskip-v4"
@@ -248,9 +289,13 @@ def main(args):
     else:
         model = Agent(env, args.stack)
         steps = 1
+    if args.steps != 1:
+        steps = args.steps
+
+    viz_states = load_states(args.states)
 
     print("Starting training...")
-    train(model, env, eval_env, steps, args)
+    train(model, env, eval_env, steps, args, viz_states)
     print(f"Training done. Evaluating after {NUM_EPISODES} steps...")
 
     print("Type anything to evaluate model (EOF to exit)")
@@ -324,4 +369,35 @@ if __name__ == "__main__":
         "--stack", action="store_true", default=False, help="Frame stack"
     )
 
+    parser.add_argument(
+        "--states",
+        action="store",
+        default="viz/q_states.pickle",
+        help="Visualization frames",
+    )
+
+    parser.add_argument(
+        "--viz_dir", action="store", default="viz", help="Visualization directory"
+    )
+
+    parser.add_argument(
+        "--viz_name",
+        action="store",
+        default=time.strftime("qvals-%m-%d-%H-%M"),
+        help="Average Q-Value information",
+    )
+
+    parser.add_argument(
+        "--td_loss",
+        action="store",
+        default=time.strftime("td-loss-%m-%d-%H-%M"),
+        help="TD Loss(?) information",
+    )
+
+    parser.add_argument(
+        "--steps",
+        action="store",
+        default=1,
+        help="Specify number of steps [TESTING ONLY]",
+    )
     main(parser.parse_args())
