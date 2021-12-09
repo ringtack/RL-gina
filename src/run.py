@@ -53,7 +53,7 @@ def evaluate(model, env):
         reward += rwd
         t += 1
         env.render()
-    print(f"Episode reward: {reward}\t Episode length: {t}")
+    print("Episode reward: {reward}\t Episode length: {t}")
 
 
 def train(model, env):
