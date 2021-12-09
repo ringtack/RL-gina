@@ -101,22 +101,36 @@ class Agent:
     def remember(self, *args):
         self.experience.remember(*args)
 
-    def initialize_experiences(self, env):
+    def initialize_experiences(self, env1, env2):
         """
         Initialize experience buffer with BUFFER_SIZE number of random experiences.
         """
-        state = env.reset()
+        state = env1.reset()
         done = False
 
-        for _ in range(BUFFER_SIZE):
+        # Initializing model with half data from env1
+        for _ in range(BUFFER_SIZE // 2):
             # randomly initialize replay memory to capacity N
-            action = env.action_space.sample()
-            next_state, reward, done, _ = env.step(action)
+            action = env1.action_space.sample()
+            next_state, reward, done, _ = env1.step(action)
             self.remember(state, action, reward, next_state, done)
 
-            state = env.reset() if done else next_state
+            state = env1.reset() if done else next_state
+
+        state = env2.reset()
+        done = False
+        # Initializing model with half data from env2
+        for _ in range(BUFFER_SIZE - (BUFFER_SIZE // 2)):
+            # randomly initialize replay memory to capacity N
+            action = env2.action_space.sample()
+            next_state, reward, done, _ = env2.step(action)
+            self.remember(state, action, reward, next_state, done)
+
+            state = env2.reset() if done else next_state
 
         print("Experience buffer initialized...")
+
+
 
     def update_target_net(self):
         self.target_net.set_weights(self.q_net.get_weights())

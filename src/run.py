@@ -37,9 +37,9 @@ def epsilon(t):
     return max(EPSILON_END, EPSILON_START + t * eps_frac)
 
 
-def evaluate(model, env):
-    state = env.reset()
-    env.render()
+def evaluate(model, env1, env2):
+    state = env1.reset()
+    env1.render()
     done = False
 
     reward = 0.0
@@ -50,19 +50,41 @@ def evaluate(model, env):
         print(tf_state)
         action_qvals = model.q_net(tf_state)
         action = tf.cast(tf.math.argmax(action_qvals, 1), tf.int32).numpy()[0]
-        state, rwd, done, _ = env.step(action)
+        state, rwd, done, _ = env1.step(action)
         reward += rwd
         t += 1
-        env.render()
-    print(f"Episode reward: {reward}\t Episode length: {t}")
+        env1.render()
+    print(f"Episode reward Env 1: {reward}\t Episode length: {t}")
+
+    state = env2.reset()
+    env2.render()
+    done = False
+
+    reward = 0.0
+    t = 0
+    while not done:
+        tf_state = tf.convert_to_tensor(state, dtype=np.float32)
+        tf_state = tf.expand_dims(tf_state, 0)
+        print(tf_state)
+        action_qvals = model.q_net(tf_state)
+        action = tf.cast(tf.math.argmax(action_qvals, 1), tf.int32).numpy()[0]
+        state, rwd, done, _ = env2.step(action)
+        reward += rwd
+        t += 1
+        env2.render()
+    print(f"Episode reward Env 2: {reward}\t Episode length: {t}")
 
 
-def train(model, env):
-    model.initialize_experiences(env)
-    episode_rewards = [0.0]
-    episode_lengths = [0]
+def train(model, env1, env2):
+    model.initialize_experiences(env1, env2)
+    episode_rewards1 = [0.0]
+    episode_lengths1 = [0]
 
-    state = env.reset()
+    episode_rewards2 = [0.0]
+    episode_lengths2 = [0]
+
+    state1 = env1.reset()
+    state2 = env2.reset()
     for t in range(NUM_EPISODES):
         # Epsilon-greedy: randomly explore epsilon% times
         eps = epsilon(t)
@@ -71,33 +93,58 @@ def train(model, env):
         with tf.GradientTape() as tape:
             if sample < eps:
                 # Exploration
-                action = env.action_space.sample()
+                action1 = env1.action_space.sample()
+                action2 = env2.action_space.sample()
             else:
                 # Exploitation
-                tf_state = tf.convert_to_tensor(state, dtype=np.float32)
-                tf_state = tf.expand_dims(tf_state, 0)
-                print(tf_state)
-                action_qvals = model.q_net(tf_state)
-                action = tf.cast(tf.math.argmax(action_qvals, 1), tf.int32).numpy()[0]
+                tf_state1 = tf.convert_to_tensor(state1, dtype=np.float32)
+                tf_state1 = tf.expand_dims(tf_state1, 0)
+                print(tf_state1)
+                tf_state2 = tf.convert_to_tensor(state2, dtype=np.float32)
+                tf_state2 = tf.expand_dims(tf_state2, 0)
+                print(tf_state2)
+
+                action_qvals1 = model.q_net(tf_state1)
+                action1 = tf.cast(tf.math.argmax(action_qvals1, 1), tf.int32).numpy()[0]
+
+                action_qvals2 = model.q_net(tf_state2)
+                action2 = tf.cast(tf.math.argmax(action_qvals2, 1), tf.int32).numpy()[0]
 
             # Get next state, and add to experience buffer
-            next_state, reward, done, _ = env.step(action)
-            model.remember(state, action, reward, next_state, done)
-            state = next_state
+            next_state1, reward1, done1, _ = env2.step(action1)
+            model.remember(state1, action1, reward1, next_state1, done1)
+            state1 = next_state1
+
+            next_state2, reward2, done2, _ = env2.step(action2)
+            model.remember(state2, action2, reward2, next_state2, done2)
+            state2 = next_state2
 
             # Update episode reward and length; if done, reset game
-            episode_rewards[-1] += reward
-            episode_lengths[-1] += 1
-            if done:
+            episode_rewards1[-1] += reward1
+            episode_lengths1[-1] += 1
+            if done1:
                 print(
-                    f"Episode complete. Average reward: {episode_rewards[-1] / episode_lengths[-1]}"
+                    f"Episode complete. Average reward: {episode_rewards1[-1] / episode_lengths1[-1]}"
                 )
                 print(
-                    f"\tReward: {episode_rewards[-1]}\tEpisode length: {episode_lengths[-1]}"
+                    f"\tReward: {episode_rewards1[-1]}\tEpisode length: {episode_lengths1[-1]}"
                 )
-                state = env.reset()
-                episode_rewards.append(0.0)
-                episode_lengths.append(0)
+                state = env1.reset()
+                episode_rewards1.append(0.0)
+                episode_lengths1.append(0)
+
+            episode_rewards2[-1] += reward2
+            episode_lengths2[-1] += 1
+            if done2:
+                print(
+                    f"Episode complete. Average reward: {episode_rewards2[-1] / episode_lengths2[-1]}"
+                )
+                print(
+                    f"\tReward: {episode_rewards2[-1]}\tEpisode length: {episode_lengths2[-1]}"
+                )
+                state = env2.reset()
+                episode_rewards2.append(0.0)
+                episode_lengths2.append(0)
 
             if t % LEARNING_FREQ == 0:
                 loss = model.optimize_model()
@@ -116,20 +163,25 @@ def train(model, env):
 
         if t % EVAL_STEPS == 0:
             print(f"Evaluating model after {t} steps...")
-            evaluate(model, env)
-            state = env.reset()
+            evaluate(model, env1, env2)
+            state = env1.reset()
+            state = env2.reset()
 
 
 def main(args):
     print(args)
-    env_id = f"{args.env}NoFrameskip-v4"
-    env = make_atari_model(env_id)
-    model = Agent(env.action_space.n)
+    env1_id = f"{args.env1}NoFrameskip-v4"
+    env1 = make_atari_model(env1_id)
+
+    env2_id = f"{args.env2}NoFrameskip-v4"
+    env2 = make_atari_model(env2_id)
+    # Both agents have same action space
+    model = Agent(env1.action_space.n)
 
     print("Starting training...")
-    train(model, env)
+    train(model, env1, env2)
     print(f"Training done. Evaluating after {NUM_EPISODES} steps...")
-    evaluate(model, env)
+    evaluate(model, env1, env2)
 
 
 if __name__ == "__main__":
@@ -144,9 +196,16 @@ if __name__ == "__main__":
         help="Load debug files",
     )
     parser.add_argument(
-        "--env",
+        "--env1",
         action="store",
         default="SpaceInvaders",
+        #  default="CartPole",
+        help="Atari game (supported games: Pong, Cartpole, SpaceInvaders, Breakout, BeamRider)",
+    )
+    parser.add_argument(
+        "--env2",
+        action="store",
+        default="DemonAttack",
         #  default="CartPole",
         help="Atari game (supported games: Pong, Cartpole, SpaceInvaders, Breakout, BeamRider)",
     )

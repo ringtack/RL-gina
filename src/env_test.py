@@ -78,7 +78,7 @@ def time_env(model, env, num_iters=250):
     print(f"Average over {num_iters} attempts: {sum(times) / len(times)}")
 
 
-name = "SpaceInvaders"
+name = "DemonAttack"
 env_id = f"{name}NoFrameskip-v4"
 #  env = make_atari_model(env_id, terminal_on_life_loss=True)
 
