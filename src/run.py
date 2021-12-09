@@ -131,13 +131,15 @@ def save_rewards(episode_rewards, episode_lengths, rwd_dir, rwd_name):
         print(f"Saved current rewards to {filename}.")
 
 
-def avg_q(model, viz_states):
+def get_qvals(model, viz_states):
     viz_states_batch = tf.convert_to_tensor(viz_states, dtype=tf.float32)
     q_vals = model.q_net(viz_states_batch)
+    sum_q = tf.reduce_sum(q_vals).numpy()
+    avg_q = tf.reduce_mean(tf.reduce_sum(q_vals, axis=1)).numpy()
     print(
-        f"\t\tAverage Q values: {tf.reduce_mean(tf.reduce_sum(q_vals,axis=1)).numpy()}."
+        f"\tSum Q: {tf.reduce_sum(q_vals).numpy()}\t\tAverage Q: {tf.reduce_mean(tf.reduce_sum(q_vals,axis=1)).numpy()}"
     )
-    return tf.reduce_mean(tf.reduce_sum(q_vals, axis=1)).numpy()
+    return sum_q, avg_q
 
 
 def train(model, env, eval_env, steps, args, viz_states, vid=True):
@@ -165,7 +167,7 @@ def train(model, env, eval_env, steps, args, viz_states, vid=True):
 
     # Write average Q-values to csv file
     viz_writer = csv.writer(open(f"{viz_dir}/{viz_name}.csv", "w+", newline=""))
-    viz_writer.writerow(["episode", "average q_values"])
+    viz_writer.writerow(["episode", "sum q_values", "average q_values"])
 
     # Write losses to csv file
     td_writer = csv.writer(open(f"{viz_dir}/{td_name}.csv", "w+", newline=""))
@@ -239,9 +241,8 @@ def train(model, env, eval_env, steps, args, viz_states, vid=True):
                     if vid:
                         frames = []
 
-                    viz_writer.writerow(
-                        [len(episode_rewards), avg_q(model, viz_states)]
-                    )
+                    sum_q, avg_q = get_qvals(model, viz_states)
+                    viz_writer.writerow([len(episode_rewards), sum_q, avg_q])
                     episode_rewards.append(0.0)
                     episode_lengths.append(0)
                 if t % LEARNING_FREQ == 0:
@@ -268,6 +269,7 @@ def train(model, env, eval_env, steps, args, viz_states, vid=True):
                 eval_writer.writerow([reward, length])
         except KeyboardInterrupt:
             save_model(model, t, weight_dir, weight_name)
+            save_rewards(episode_rewards, episode_lengths, rwd_dir, rwd_name)
             sys.exit(1)
 
 
