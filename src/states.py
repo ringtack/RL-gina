@@ -4,7 +4,7 @@ import gym
 
 from atari_wrappers import make_atari_model
 
-env = make_atari_model("SpaceInvadersNoFrameskip-v4", frame_stack=True)
+env = make_atari_model("DemonAttackNoFrameskip-v4", frame_stack=True)
 
 state = env.reset()
 done = False
@@ -20,5 +20,5 @@ for _ in range(500):
 
     state = env.reset() if done else next_state
 
-with open("viz/q_states_stack.pickle", "wb+") as p_f:
+with open("viz/q_states_da_stack.pickle", "wb+") as p_f:
     pickle.dump(states, p_f)
