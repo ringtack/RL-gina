@@ -127,7 +127,7 @@ To run a single model:
     slightly unreadable, is a decent extensible format), using
     `{weight,rwd1,vid1,viz1}_dir` and `{weight,rwd1,vid1,viz1}_name`
     respectively. Note that **you will need to create each
-    (subdirectory) yourself if it does not already exist**
+    (subdirectory) yourself if it does not already exist**.
     Unfortunately, Python's file writers aren't that cracked. Sadge.
     -   For additional logging, specify a `td1_loss` folder to record
         loss over time.
@@ -153,7 +153,7 @@ if one is curious.
 
 To regenerate Q-value states (e.g. if we want a bigger size, different
 stack, etc), modify `states.py` and adjust appropriate environment names
-and file paths. (Yeah another thing that needs optimization rip)
+and file paths. (Yeah another thing that needs automation rip)
 
 Currently, although rewards and weights are stored every `SAVE_FREQ`
 steps, the rewards themselves are not loadable; thus, restarting a model
@@ -166,6 +166,6 @@ Feel free to adjust.
 
 ## Results
 
-Yay! In general, generated gif files may be inspected in `viz/gifs`. Our
-best result may be seen here:
-[POGGIES_MODEL](https://raw.githubusercontent.com/ringtack/RL-gina/main/src/viz/good_gifs/POGGIES_MODEL_350000.gif).
+Yay! In general, generated gif files may be inspected in
+`src/viz/good_gifs`. I'll figure out how to render GIFs in a README.md
+eventually. For now, you may inspect those.
