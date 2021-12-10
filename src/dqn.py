@@ -100,9 +100,10 @@ def epsilon(t):
 
 
 class Agent:
-    def __init__(self, env, stack):
-        self.env = env
-        self.num_actions = env.action_space.n
+    def __init__(self, env1, env2, stack):
+        self.env1 = env1
+        self.num_actions = env1.action_space.n
+        self.env2 = env2
 
         self.q_net = DDQN(self.num_actions, stack)
         self.target_net = DDQN(self.num_actions, stack)
@@ -114,14 +115,14 @@ class Agent:
 
     def act(self, state, t):
         """
-        Follow epsilon-greedy exploration to balance exploration-exploitation tradeoff
+        Follow epsilon-greedy exploration to balance exploration-exploitation tradeoff given
         """
         eps = epsilon(t)
         sample = random.random()
 
         if sample < eps:
             # Exploration
-            action = self.env.action_space.sample()
+            action = self.env1.action_space.sample()
         else:
             # Exploitation
             tf_state = tf.convert_to_tensor(state, dtype=np.float32)
@@ -131,20 +132,30 @@ class Agent:
 
         return action
 
-    def initialize_experiences(self, env):
+    def initialize_experiences(self, env1, env2):
         """
-        Initialize experience buffer with BUFFER_SIZE number of random experiences.
+        Initialize experience buffer with BUFFER_SIZE number of random experiences. Half are from env1, half are from env2.
         """
-        state = env.reset()
+        state = env1.reset()
         done = False
 
-        for _ in range(BUFFER_SIZE):
+        for _ in range(BUFFER_SIZE // 2):
             # randomly initialize replay memory to capacity N
-            action = env.action_space.sample()
-            next_state, reward, done, _ = env.step(action)
+            action = env1.action_space.sample()
+            next_state, reward, done, _ = env1.step(action)
             self.remember(state, action, reward, next_state, done)
 
-            state = env.reset() if done else next_state
+            state = env1.reset() if done else next_state
+
+        state = env2.reset()
+        done = False
+        for _ in range(BUFFER_SIZE - (BUFFER_SIZE // 2)):
+            # randomly initialize replay memory to capacity N
+            action = env2.action_space.sample()
+            next_state, reward, done, _ = env2.step(action)
+            self.remember(state, action, reward, next_state, done)
+
+            state = env2.reset() if done else next_state
 
         print("Experience buffer initialized...")
 
