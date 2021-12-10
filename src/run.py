@@ -36,22 +36,23 @@ def openai_atari_model(env_id):
 
 def evaluate(model, env1, env2, vid1_dir, vid2_dir, vid1_name, vid2_name, step, vid=True):
     state = env1.reset()
-    env1.render()
+    #env1.render()
     done = False
-
     if vid:
         frames1 = []
-
     reward1 = 0.0
     t1 = 0
     while not done:
+        if (t1 % 100 == 0):
+            print("Timestep: ", t1)
         if vid:
             frames1.append(Image.fromarray(env1.render(mode="rgb_array")))
         action = model.act(state, t1)
         state, rwd, done, _ = env1.step(action)
         reward1 += rwd
         t1 += 1
-        env1.render()
+        #env1.render()
+
     print(f"Env1 Episode reward: {reward1}\t Episode length: {t1}")
 
     if vid:
@@ -64,7 +65,7 @@ def evaluate(model, env1, env2, vid1_dir, vid2_dir, vid1_name, vid2_name, step, 
             print(f"Saved game gif at step {step} to {filename}.")
 
     state = env2.reset()
-    env2.render()
+    #env2.render()
     done = False
 
     if vid:
@@ -80,7 +81,7 @@ def evaluate(model, env1, env2, vid1_dir, vid2_dir, vid1_name, vid2_name, step, 
         state, rwd, done, _ = env2.step(action)
         reward2 += rwd
         t2 += 1
-        env2.render()
+        #env2.render()
     print(f"Env2 Episode reward: {reward2}\t Episode length: {t2}")
 
     if vid:
@@ -377,7 +378,7 @@ def train(model, env1, env2, eval_env1, eval_env2, steps, args, viz_states, vid=
 
             if t % EVAL_STEPS == 0:
                 print(f"Evaluating model after {t} steps...")
-                reward1, reward2, length1, length2= evaluate(model, eval_env1, eval_env2, vid1_dir, vid2_dir, vid1_name, vid2_name, t)
+                reward1, reward2, length1, length2 = evaluate(model, eval_env1, eval_env2, vid1_dir, vid2_dir, vid1_name, vid2_name, t)
                 eval1_writer.writerow([reward1, length1])
                 eval2_writer.writerow([reward2, length2])
         except KeyboardInterrupt:
