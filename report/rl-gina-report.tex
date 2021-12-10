@@ -9,7 +9,7 @@
 \usepackage{graphicx}
 
 
-\title{RL-GInER: Generalized Information Experience Replay for Deep Reinforcement Learning}
+\title{ReDER: Related Domain Experience Replay in Deep Reinforcement Learning}
 
 % Authors must not appear in the submitted version. They should be hidden
 % as long as the \iclrfinalcopy macro remains commented out below.
@@ -55,31 +55,33 @@ Providence, RI 02912, USA \\
 \newcommand{\new}{\marginpar{NEW}}
 
 \iclrfinalcopy % Uncomment for camera-ready version, but NOT for submission.
+
 \begin{document}
 
 
 \maketitle
 
-% \begin{abstract}
-  % We propose a shared state representation 
-% The abstract paragraph should be indented 1/2~inch (3~picas) on both left and
-% right-hand margins. Use 10~point type, with a vertical spacing of 11~points.
-% The word \textsc{Abstract} must be centered, in small caps, and in point size 12. Two
-% line spaces precede the abstract. The abstract must be limited to one
-% paragraph.
-% \end{abstract}
+
+
+\begin{figure}[htpb]
+  \centering
+  \includegraphics[width=0.3\textwidth]{imgs/SpaceInvaders.png}
+  \caption{Space Invaders, a classic Atari game}
+  \label{fig:imgs-SpaceInvaders-png}
+\end{figure}
 
 \section{Introduction}
 
 Recent research in deep reinforcement learning has yielded great advancements, with successes from
-simple games like Backgammon (\cite{TDGammon}) and Atari (\cite{Mnih}) to incredibly complex tasks
-such as beating Lee Sedol, a 9-dan professional at Go (\cite{AlphaGo}) and multi-step robotics tasks
-(\cite{ActionableModels}). However, deep learning models already take significant resources to
-train, and reinforcement learning agents worsen this issue by an order of magnitude. For instance,
-AlphaGo trained over 72 million matches in 72 hours, using over 6000 TPUs for self-play simulation,
-and 64 GPUs and 19 CPUs for parameter updates; in total, training AlphaGo cost \$35 million. In a
-model-free environment, DeepMind's Agent57 (\cite{Agent57}) required $10$ billion episodic steps to
-train.
+simple games like Backgammon (\url{https://dl.acm.org/doi/10.1145/203330.203343}) and Atari
+(\url{https://arxiv.org/pdf/1312.5602.pdf}) to incredibly complex tasks such as beating Lee Sedol, a
+9-dan professional at Go (\url{https://www.nature.com/articles/nature16961}) and multi-step robotics
+tasks (\url{https://arxiv.org/pdf/2104.07749.pdf}). However, deep learning models already take
+significant resources to train, and reinforcement learning agents worsen this issue by an order of
+magnitude. For instance, AlphaGo trained over 72 million matches in 72 hours, using over 6000 TPUs
+for self-play simulation, and 64 GPUs and 19 CPUs for parameter updates; in total, training AlphaGo
+cost \$35 million. In a model-free environment, DeepMind's Agent57
+(\url{https://arxiv.org/abs/2003.13350}) required $10$ billion episodic steps to train.
 
 Clearly, deep reinforcement learning agents are incredibly computationally expensive to train. In
 this project, we attempt to alleviate this cost. From experience, humans are relatively adept at
@@ -98,12 +100,12 @@ styles; here we choose top-down shooter games, specifically Space Invaders and D
 
 \section{Background}
 
-Mnih et. al. provide the initial Deep Q-Learning Network capable of successfully playing Atari
-(\cite{Mnih}) that forms the background of our naive Deep Q-Learning (DQN) reinforcement agent.
-
-In classic reinforcement learning (RL), an \textbf{agent} interacts with an \textbf{environment},
-and attempts to maximize cumulative \textbf{reward}. Specifically, given a state space $S$ of all
-valid states in an environment, and an action space $A$ of all valid actions, an agent adopts a
+In classic reinforcement learning (RL)\footnote{OpenAI's ``Spinning Up'' Reinforcement tutorial
+provides a great introduction to RL; we adopted parts of their tutorial in this section. Check it
+out at \url{https://spinningup.openai.com/en/latest/spinningup/rl_intro.html}}, an \textbf{agent}
+interacts with an \textbf{environment}, and attempts to maximize cumulative \textbf{reward}.
+Specifically, given a state space $S$ of all valid states in an environment, and an action space $A$
+of all valid actions, an agent adopts a
 \textbf{policy} \[
   \pi: S\longrightarrow A, \pi(s_t)=a_t
 \] that picks an available action $a\in A$ from a current state $s \in S$. In general, state and
@@ -125,8 +127,9 @@ and $\gamma\in (0,1)$ is a discount factor on future rewards. Intuitively, we wi
 current rewards over future rewards; mathematically, we need reward values to converge. Reward
 factors into the \textbf{value} of a state, computed by a function \[
   V^{\pi}:S\longrightarrow \R, V^{\pi}(s_t)=v_t
-.\] Two functions---a value function and a $Q$ function---are particularly important in optimizing
-future reward, and play a central role in reinforcement learning algorithms. They are given by
+.\] Two functions---the value function and the $Q$ function---are particularly important in
+optimizing future reward, and play a central role in reinforcement learning algorithms. They are
+given by
 \begin{align*}
   V^{\pi}(s)&=E_{\tau\sim \pi}[R(\tau)\mid s_0=s]\\
   Q^{\pi}(s, a)&=E_{\tau\sim \pi}[R(\tau)\mid s_0=s, a_0=a]
@@ -155,22 +158,34 @@ $Q$-network, we want to minimize distance from the target $Q$-function: \[
   L_t(\theta_t)=E[(y_t-Q(s,a;\theta_t))^2]
 ,\] where $y_t=E[r_t+\gamma\max_{a'} Q(s',a';\theta_{t+1})]$ is the target $Q$ function. This is the
 \textbf{temporal-difference loss}; that is, the loss between our current $Q$ network and the $Q$
-network of the next step, which functions as our target $Q$ network.
+network of the next step, which functions as our target $Q$ network. Because we do not have a ground
+truth optimal $Q$ function, we instead train by constantly learning and updating our $Q$-net with
+``future'' $Q$-values. From this, one can see how training RL models has extremely high variance,
+and is susceptible to model collapse.
 
-A few modifications are made. To clip error values and reduce variance, we employ the Huber loss
-function instead of MSE loss. That is, \[
+To rememdy this, a few modifications are made. To clip error values and reduce variance, we employ
+the Huber loss function instead of MSE loss. That is, \[
   L_{\delta}(y_{true}, y_{pred})=\left\{\begin{array}{rl} \frac{1}{2}(y_{true}-y_{pred})^2, &
       ~\text{for}~ \left| y_{true}-y_{pred} \right|  \le \delta \\ \delta(\left| y_{true}-y_{pred}
       \right|-\frac{1}{2}\delta ), &~\text{otherwise}~\end{array}\right.
-.\] Additionally, Minh et. al. 2015 (\url{https://www.nature.com/articles/nature14236.pdf}) provide
-a method of stabilizing variance of the training; because a naive DQN trains solely on the next
+.\] Intuitively, with larger loss values, we inherently clip them such that no drastic changes are
+made to the model (see Figure \ref{fig:imgs-huber_loss-png} for a visualization of its functionality). 
+
+\begin{figure}
+  \centering
+  \includegraphics[width=0.5\textwidth]{imgs/huber_loss.png}
+  \caption{Huber Loss vs. MSE, from Wikipedia (Huber Loss)}
+  \label{fig:imgs-huber_loss-png}
+\end{figure}
+
+Additionally, Minh et. al. 2015 (\url{https://www.nature.com/articles/nature14236.pdf}) provide
+a method of stabilizing variance in the training; because a naive DQN trains solely on the next
 step's $Q$-network, variance is extremely high, and the model is susceptible to local minima traps.
 To reduce this, a stabilizing $\hat{Q}$ network is introduced to prevent the model from
 over-deviating from previous training weights. This $\hat{Q}$ network will share the weights as the
 original $Q$ network, except it is not trained; $\hat{Q}$ will only update its values to the
-original $Q$ network periodically instead of every step, so by using it as an anchor in the loss
-function, the original $Q$ network's training variance is greatly reduced. Our loss function then
-becomes \[
+original $Q$ network periodically instead of every step. Thus, its function as an anchor prevents
+the training from fluctuating too far from previous steps. Our loss function then becomes \[
   L_t(\theta_t)=E[(y_t-Q(s,a;\theta_t))^2]
 ,\] where $y_t=E[r_t+\gamma \hat{Q}(s', \max_{a'}(s', a';\theta_{t+1}); \theta_{\hat{Q}})]$. This
 architecture of a second stabilizing $\hat{Q}$ target network is called a \textbf{double deep
@@ -185,15 +200,13 @@ value of taking a certain action in a state, rather than the absolute value: \[
 .\] This reduces variance by comparatively determining the value of a state, rather than absolutely
 predicting it; thus, in extreme states a large $Q$ value is avoided. The ``dueling'' architectures
 of the value and advantage function can theoretically learn valuable (and not valuable) states
-without having to learn the effect of each action in each state, as the naive $Q$-network would;
-this comes as a result of the model learning each separate network, and indirectly predicting the
-$Q$-values. The $Q$-function becomes \[
+without having to learn the effect of each action in each state, as the naive $Q$-network is forced
+to; this comes as a result of the model learning each separate network, and indirectly predicting
+the $Q$-values. The $Q$-function becomes \[
   Q(s, a)=V(s)+\left( A(s,a) - \frac{1}{\left| \mathcal{A} \right| }\sum_{a'\in A}A(s,a') \right) 
 .\] This architecture of splitting up the $Q$-network into value $V$ and advantage $A$ streams is
 called a \textbf{dueling deep Q-network}, or \textbf{Dueling DQN}. Combined with the DDQN, the final
-model is a \textbf{Dueling DDQN}.
-
-\section{Methodology}
+model is a \textbf{Dueling DDQN} (Figure \ref{fig:imgs-dueling-png}).
 
 \begin{figure}[htpb]
   \centering
@@ -201,6 +214,9 @@ model is a \textbf{Dueling DDQN}.
   \caption{Dueling vs. Naive DQN Architecture}
   \label{fig:imgs-dueling-png}
 \end{figure}
+
+\section{Methodology}
+
 
 Our baseline Dueling DDQN agent follows a similar structure to the Mnih et al. 2015 network. An
 input image is passed through four convolutional layers: the first has 32 $8\times 8$ filters with
@@ -227,8 +243,8 @@ dodge bullets in another, and hitting enemies in both boosts your scores. Howeve
 such understanding of states, and any architecture used to interpret the screen in one game will
 probably fail in the other because of the stark visual differences, animations that play, etc. As
 such, we want to develop a state representation such that we can somehow map an experience in one
-game to an experience in another. How this is done is easier said than done. We have attempted
-several different methods to encourage shared learning between the two games.
+game to an experience in another. We have attempted several different methods to encourage shared
+learning between the two games.
 
 \subsection{Direct Learning}
 By far the simplest way to attempt to learn from either experience is to ignore
@@ -253,18 +269,27 @@ game (e.g. Demon Attack), with different animations and environment structures, 
 another game (e.g. Space Invaders) and the model's interpretation of potent features.  As such,
 another intuition is to somehow map one game screen to another. We assume that taking the same
 series of actions in one game (ie moving left, right, shooting, and pausing) has a direct
-``translation'' in the other game where the same series of actions were taken.  However, in practice,
-machines are not very good at learning this weak translation. A network trained to map images from
-one game to the other tends to focus on static, unchanging details (ie the floors, scores,
-decorative borders, etc). Any attempt for the network to learn something more interesting, like the
-ships' movements, will immediately be squashed by another frame where the ship is in another region.
-As such, this model converges to a local minimum where it is very good at capturing the static,
-unmoving objects but cannot map enemies, ships, or moving objects. Most of either screen is taken up
-by negative space, and since any loss function would have to give some form of scalar value to
-describe differences between two images, a model focusing just on static objects can have reasonably
-low loss for every frame. This is a lot easier to converge to than the complex model that tries to
-learn the nuances of ship movement. Simply put, one state does not directly map to another, even if
-the steps leading up to those two states were identical.
+``translation'' in the other game where the same series of actions were taken (Figure
+\ref{fig:imgs-StateToState}).
+
+\begin{figure}[htpb]
+  \centering
+  \includegraphics[width=0.6\textwidth]{imgs/StateToState.png}
+  \caption{State Translation Mapping}
+  \label{fig:imgs-StateToState}
+\end{figure}
+
+However, in practice, machines are not very good at learning this weak translation. A network
+trained to map images from one game to the other tends to focus on static, unchanging details (ie
+the floors, scores, decorative borders, etc). Any attempt for the network to learn something more
+interesting, like the ships' movements, will immediately be squashed by another frame where the ship
+is in another region.  As such, this model converges to a local minimum where it is very good at
+capturing the static, unmoving objects but cannot map enemies, ships, or moving objects. Most of
+either screen is taken up by negative space, and since any loss function would have to give some
+form of scalar value to describe differences between two images, a model focusing just on static
+objects can have reasonably low loss for every frame. This is a lot easier to converge to than the
+complex model that tries to learn the nuances of ship movement. Simply put, one state does not
+directly map to another, even if the steps leading up to those two states were identical.
 
 \subsection{Latent Spaces}
 Another core idea is to develop a state latent space to learn from rather than learning from
@@ -290,382 +315,529 @@ changes between states rather than states themselves. For every action, we calcu
 function that subtracts the resulting state from the previous state, which should highlight the
 changes in states rather than focusing ons tactic objects. Our results, however, were once again
 less than promising. Our distribution is once again relatively static, this time having streaks
-where ships frequently appear and hover around. This is a result of something we are yet to mention
-about these models: overfitting for early episodes. Most of the initial training for these methods
-come before we have a trained Q network. As such, we are forced to train on random walks, which
-rarely get far and have very low step counts. This means our models are optimized to early states,
-like having the ship in the middle and paying attention to the first few enemies. Still, while this
-network also yielded negative results, it did tell us a lot about the early stages of the game. Even
-if we add a time value to encourage movement, we see that the local minima model converges to maps
-out where enemies typically are and where the ship typically is, which is still pretty useful
-information.
+where ships frequently appear and hover around (Figure \ref{fig:imgs-DeltaModel-png}).
 
-
-
-
-
-% \bibitem{TDGammon}
-% \url{https://dl.acm.org/doi/10.1145/203330.203343}
-
-% \bibitem{Mnih}
-% \url{https://arxiv.org/pdf/1312.5602.pdf}
-
-% \bibitem{AlphaGo}
-% \url{https://www.nature.com/articles/nature16961}
-
-% \bibitem{ActionableModels}
-% \url{https://arxiv.org/pdf/2104.07749.pdf}
-
-% \bibitem{Agent57}
-% \url{https://arxiv.org/abs/2003.13350}
-
-
-ICLR requires electronic submissions, processed by
-\url{https://openreview.net/}. See ICLR's website for more instructions.
-
-If your paper is ultimately accepted, the statement {\tt
-  {\textbackslash}iclrfinalcopy} should be inserted to adjust the
-format to the camera ready requirements.
-
-The format for the submissions is a variant of the NeurIPS format.
-Please read carefully the instructions below, and follow them
-faithfully.
-
-\subsection{Style}
-
-Papers to be submitted to ICLR 2021 must be prepared according to the
-instructions presented here.
-
-%% Please note that we have introduced automatic line number generation
-%% into the style file for \LaTeXe. This is to help reviewers
-%% refer to specific lines of the paper when they make their comments. Please do
-%% NOT refer to these line numbers in your paper as they will be removed from the
-%% style file for the final version of accepted papers.
-
-Authors are required to use the ICLR \LaTeX{} style files obtainable at the
-ICLR website. Please make sure you use the current files and
-not previous versions. Tweaking the style files may be grounds for rejection.
-
-\subsection{Retrieval of style files}
-
-The style files for ICLR and other conference information are available online at:
-\begin{center}
-   \url{http://www.iclr.cc/}
-\end{center}
-The file \verb+iclr2021_conference.pdf+ contains these
-instructions and illustrates the
-various formatting requirements your ICLR paper must satisfy.
-Submissions must be made using \LaTeX{} and the style files
-\verb+iclr2021_conference.sty+ and \verb+iclr2021_conference.bst+ (to be used with \LaTeX{}2e). The file
-\verb+iclr2021_conference.tex+ may be used as a ``shell'' for writing your paper. All you
-have to do is replace the author, title, abstract, and text of the paper with
-your own.
-
-The formatting instructions contained in these style files are summarized in
-sections \ref{gen_inst}, \ref{headings}, and \ref{others} below.
-
-\section{General formatting instructions}
-\label{gen_inst}
-
-The text must be confined within a rectangle 5.5~inches (33~picas) wide and
-9~inches (54~picas) long. The left margin is 1.5~inch (9~picas).
-Use 10~point type with a vertical spacing of 11~points. Times New Roman is the
-preferred typeface throughout. Paragraphs are separated by 1/2~line space,
-with no indentation.
-
-Paper title is 17~point, in small caps and left-aligned.
-All pages should start at 1~inch (6~picas) from the top of the page.
-
-Authors' names are
-set in boldface, and each name is placed above its corresponding
-address. The lead author's name is to be listed first, and
-the co-authors' names are set to follow. Authors sharing the
-same address can be on the same line.
-
-Please pay special attention to the instructions in section \ref{others}
-regarding figures, tables, acknowledgments, and references.
-
-
-There will be a strict upper limit of 8 pages for the main text of the initial submission, with unlimited additional pages for citations. Note that the upper page limit differs from last year!Authors may use as many pages of appendices (after the bibliography) as they wish, but reviewers are not required to read these. During the rebuttal phase and for the camera ready version, authors are allowed one additional page for the main text, for a strict upper limit of 9 pages.
-
-\section{Headings: first level}
-\label{headings}
-
-First level headings are in small caps,
-flush left and in point size 12. One line space before the first level
-heading and 1/2~line space after the first level heading.
-
-\subsection{Headings: second level}
-
-Second level headings are in small caps,
-flush left and in point size 10. One line space before the second level
-heading and 1/2~line space after the second level heading.
-
-\subsubsection{Headings: third level}
-
-Third level headings are in small caps,
-flush left and in point size 10. One line space before the third level
-heading and 1/2~line space after the third level heading.
-
-\section{Citations, figures, tables, references}
-\label{others}
-
-These instructions apply to everyone, regardless of the formatter being used.
-
-\subsection{Citations within the text}
-
-Citations within the text should be based on the \texttt{natbib} package
-and include the authors' last names and year (with the ``et~al.'' construct
-for more than two authors). When the authors or the publication are
-included in the sentence, the citation should not be in parenthesis using \verb|\citet{}| (as
-in ``See \citet{Hinton06} for more information.''). Otherwise, the citation
-should be in parenthesis using \verb|\citep{}| (as in ``Deep learning shows promise to make progress
-towards AI~\citep{Bengio+chapter2007}.'').
-
-The corresponding references are to be listed in alphabetical order of
-authors, in the \textsc{References} section. As to the format of the
-references themselves, any style is acceptable as long as it is used
-consistently.
-
-\subsection{Footnotes}
-
-Indicate footnotes with a number\footnote{Sample of the first footnote} in the
-text. Place the footnotes at the bottom of the page on which they appear.
-Precede the footnote with a horizontal rule of 2~inches
-(12~picas).\footnote{Sample of the second footnote}
-
-\subsection{Figures}
-
-All artwork must be neat, clean, and legible. Lines should be dark
-enough for purposes of reproduction; art work should not be
-hand-drawn. The figure number and caption always appear after the
-figure. Place one line space before the figure caption, and one line
-space after the figure. The figure caption is lower case (except for
-first word and proper nouns); figures are numbered consecutively.
-
-Make sure the figure caption does not get separated from the figure.
-Leave sufficient space to avoid splitting the figure and figure caption.
-
-You may use color figures.
-However, it is best for the
-figure captions and the paper body to make sense if the paper is printed
-either in black/white or in color.
-\begin{figure}[h]
-\begin{center}
-%\framebox[4.0in]{$\;$}
-\fbox{\rule[-.5cm]{0cm}{4cm} \rule[-.5cm]{4cm}{0cm}}
-\end{center}
-\caption{Sample figure caption.}
+\begin{figure}[htpb]
+  \centering
+  \includegraphics[width=0.6\textwidth]{imgs/DeltaModel.png}
+  \caption{Delta Mapping of States}
+  \label{fig:imgs-DeltaModel-png}
 \end{figure}
 
-\subsection{Tables}
+This is a result of something we are yet to mention about these models: overfitting for early
+episodes. Most of the initial training for these methods come before we have a trained Q network. As
+such, we are forced to train on random walks, which rarely get far and have very low step counts.
+This means our models are optimized to early states, like having the ship in the middle and paying
+attention to the first few enemies. Still, while this network also yielded negative results, it did
+tell us a lot about the early stages of the game, and provide us a way to interpret the model during
+training: even if we add a time value to encourage movement, we see that the local minima model
+converges to maps where enemies and the ships typically are.
 
-All tables must be centered, neat, clean and legible. Do not use hand-drawn
-tables. The table number and title always appear before the table. See
-Table~\ref{sample-table}.
+\subsection{Combination Methods}
+Our final method attempts to combine the lessons we learned about state representations. Instead of
+learning solely states, we want a method that is able to transform experiences from one game to
+experiences in another. Having some form of shared ``experience latent space'' could give us the
+ideal situation: a space that is able to codify experiences such that any model can learn from and
+apply them. As such, we propose the following architecture (Figure
+\ref{fig:imgs-CombinationMethod-png}). 
 
-Place one line space before the table title, one line space after the table
-title, and one line space after the table. The table title must be lower case
-(except for first word and proper nouns); tables are numbered consecutively.
+\begin{figure}[htpb]
+  \centering
+  \includegraphics[width=0.7\textwidth]{imgs/CombinationMethod.png}
+  \caption{Combination of our State Representation Models}
+  \label{fig:imgs-CombinationMethod-png}
+\end{figure}
 
-\begin{table}[t]
-\caption{Sample table title}
-\label{sample-table}
-\begin{center}
-\begin{tabular}{ll}
-\multicolumn{1}{c}{\bf PART}  &\multicolumn{1}{c}{\bf DESCRIPTION}
-\\ \hline \\
-Dendrite         &Input terminal \\
-Axon             &Output terminal \\
-Soma             &Cell body (contains cell nucleus) \\
-\end{tabular}
-\end{center}
+There are a few conditions that we want this function to satisfy. First, we want the latent space to
+be usable enough to extract experiences from it, so we would want any encoded experience
+to be returned by the decoder. Second, we wish to glean the most important
+information about these experiences: the rewards and actions. We therefore note that any encoded
+experience must return the corresponding action and reward, no matter what decoder is used. This
+provides the ``common thread'' between the translations that was lacking in the other latent space
+implementation: an encoded experience should be decoded to a similar valid experience. Finally, we
+want visual similarity: that is, decoded outputs should look like actual states and changes in
+states. We achieve this through the use of a discriminator, which tries to determine which
+experiences are real and fake (Figure \ref{fig:imgs-Discriminator-png}). 
+
+\begin{figure}[htpb]
+  \centering
+  \includegraphics[width=0.7\textwidth]{imgs/Discriminator.png}
+  \caption{Discriminator aspect of the architecture}
+  \label{fig:imgs-Discriminator-png}
+\end{figure}
+
+As such, we note that our final structure has something similar both to autoencoders and generative
+adversarial networks (Figure \ref{fig:imgs-VAE-png}):
+
+\begin{figure}[htpb]
+  \centering
+  \includegraphics[width=0.7\textwidth]{imgs/VAE2.png}
+  \caption{Variational Auto-encoder aspect}
+  \label{fig:imgs-VAE-png}
+\end{figure}
+
+Since the latent spaces are common to all games, it provides a proper replacement to raw input
+screens as our state representation. Unfortunately, the model is a bit too involved to train on our
+current hardware; it takes a minute to train on a singular step of the model given all the gradients
+that need to be optimized. However, we have the full model coded, although it is questionable
+whether the model will see any gains over just normal training. The entire translation process might
+lose some of the ``core gameplay'' advantage that our first method promised, and it may end up
+generating the same experiences over and over, which will not improve training.
+
+
+
+\section{Experiments}
+
+Before training our models, we first apply some important preprocessing steps on the Atari
+environments\footnote{Many of these techniques were first introduced and provided by OpenAI and
+DeepMind. The helper functionality was primarily adopted from OpenAI's baseline preprocessing
+methods; see
+\url{https://github.com/openai/baselines/blob/master/baselines/common/atari_wrappers.py}}. To
+facilitate training, we skip every fourth frame; previous RL literature (e.g. Mnih et. al. 2015)
+found no detrimental effects on training, while speeding up the process. Then, to reduce the
+dimensionality of the image and lessen redundancy in weights, each environment image is first
+converted from RGB to grayscale, then downsampled from $216\times 160$ to $84\times 84$. Finally, an
+optional state-stacking mechanism is provided, where four consecutive frames are stacked on top of
+each other. This provides the model with a way to learn the current trajectory of the environment's
+state (Figure \ref{fig:imgs-AtariGames-png}). 
+
+\begin{figure}[htpb]
+  \centering
+  \includegraphics[width=0.8\textwidth]{imgs/AtariGames.png}
+  \caption{Post-preprocessing Atari Images}
+  \label{fig:imgs-AtariGames-png}
+\end{figure}
+
+Following pre-processing, we train the model. To ensure a proper exploration-exploitation trade-off
+and lower the possibility of model collapse through optimizing for a local minima, we employ an
+$\varepsilon$-greedy policy, where we explore a random action with probability $\varepsilon$, and
+follow the max $Q$-value output from our model with probability $1-\varepsilon$. The $\varepsilon$
+values are linearly annealed, with the different values listed below. When calculating the loss
+function and applying gradients, we deviate slightly from the strategy proposed in Mnih et. al.
+2015; instead of backpropagating on every step, we instead learn every few (listed below)
+steps; we found that this lowers potential for model collapse in the beginning, when our model may
+be optimizing for a random (and wrong) target $\hat{Q}$ network. Additionally, while the Mnih
+architecture updates the target network every $10000$ steps, we choose a lower number (listed below)
+to avoid local minima. We choose an Adam optimizer over RMSProp optimizer; at the time of the
+original Mnih architecture, the Adam optimizer had not yet been released, and generally for deep
+learning models the Adam optimizer provides a more robust optimization function. The complete
+hyperparameters of our models are listed below (see Table \ref{table:hyperparameters}).
+
+\begin{table}[htpb]
+  \centering
+  \caption{Hyperparameters}
+  \begin{tabular}{||c | c | c||}
+    \hline
+   & Base-s1 & Base-s2 / Shared \\
+   \hline\hline
+    Learning rate & $0.00025$ & $0.00035$ \\
+    \hline
+    $\varepsilon$-start & $0.95$ & $0.99$ \\
+    \hline
+    $\varepsilon$-end & $0.05$ & $0.02$ \\
+    \hline
+    $\varepsilon$-steps & $500000$ & $500000$ \\
+    \hline
+    $\gamma$ & $0.99$ & $0.995$ \\
+    \hline
+    Num episodes & $1000000$ & $1000000$ \\
+    \hline
+    Buffer size & $10000$ & $20000$ \\
+    \hline
+    Batch size & 16 & 16 \\
+    \hline
+    Learning frequency & 20 & 10 \\
+    \hline
+    Target update & 2000 & 2500 \\
+    \hline
+    Stacked frames & 1 & 4\\
+    \hline
+  \end{tabular}
+  \label{table:hyperparameters}
 \end{table}
 
-\section{Default Notation}
-
-In an attempt to encourage standardized notation, we have included the
-notation file from the textbook, \textit{Deep Learning}
-\cite{goodfellow2016deep} available at
-\url{https://github.com/goodfeli/dlbook_notation/}.  Use of this style
-is not required and can be disabled by commenting out
-\texttt{math\_commands.tex}.
-
-
-\centerline{\bf Numbers and Arrays}
-\bgroup
-\def\arraystretch{1.5}
-\begin{tabular}{p{1in}p{3.25in}}
-$\displaystyle a$ & A scalar (integer or real)\\
-$\displaystyle \va$ & A vector\\
-$\displaystyle \mA$ & A matrix\\
-$\displaystyle \tA$ & A tensor\\
-$\displaystyle \mI_n$ & Identity matrix with $n$ rows and $n$ columns\\
-$\displaystyle \mI$ & Identity matrix with dimensionality implied by context\\
-$\displaystyle \ve^{(i)}$ & Standard basis vector $[0,\dots,0,1,0,\dots,0]$ with a 1 at position $i$\\
-$\displaystyle \text{diag}(\va)$ & A square, diagonal matrix with diagonal entries given by $\va$\\
-$\displaystyle \ra$ & A scalar random variable\\
-$\displaystyle \rva$ & A vector-valued random variable\\
-$\displaystyle \rmA$ & A matrix-valued random variable\\
-\end{tabular}
-\egroup
-\vspace{0.25cm}
-
-\centerline{\bf Sets and Graphs}
-\bgroup
-\def\arraystretch{1.5}
-
-\begin{tabular}{p{1.25in}p{3.25in}}
-$\displaystyle \sA$ & A set\\
-$\displaystyle \R$ & The set of real numbers \\
-$\displaystyle \{0, 1\}$ & The set containing 0 and 1 \\
-$\displaystyle \{0, 1, \dots, n \}$ & The set of all integers between $0$ and $n$\\
-$\displaystyle [a, b]$ & The real interval including $a$ and $b$\\
-$\displaystyle (a, b]$ & The real interval excluding $a$ but including $b$\\
-$\displaystyle \sA \backslash \sB$ & Set subtraction, i.e., the set containing the elements of $\sA$ that are not in $\sB$\\
-$\displaystyle \gG$ & A graph\\
-$\displaystyle \parents_\gG(\ervx_i)$ & The parents of $\ervx_i$ in $\gG$
-\end{tabular}
-\vspace{0.25cm}
+The experience buffers are initialized by randomly sampling \texttt{BUFFER\_SIZE} states from the
+environments; for the shared model, the buffer size is doubled, and states are sampled from both
+environments. Due to computational limits, we only trained our models over $500000$ steps, with
+evaluation benchmarking every $10000$ steps. With the single baseline models, we train using one
+OpenAI gym environment, either Space Invaders or Demon Attack. With the shared model, we train using
+two OpenAI gym environments, Space Invaders and Demon Attack; to facilitate the double environment
+nature, the model architecture alternates between the two environments, sampling stacked frames one
+at a time. When training, we lowered the batch size from the recommended $128$ to $16$, due to more
+computational limits imposed during training.
 
 
-\centerline{\bf Indexing}
-\bgroup
-\def\arraystretch{1.5}
+\section{Results}
 
-\begin{tabular}{p{1.25in}p{3.25in}}
-$\displaystyle \eva_i$ & Element $i$ of vector $\va$, with indexing starting at 1 \\
-$\displaystyle \eva_{-i}$ & All elements of vector $\va$ except for element $i$ \\
-$\displaystyle \emA_{i,j}$ & Element $i, j$ of matrix $\mA$ \\
-$\displaystyle \mA_{i, :}$ & Row $i$ of matrix $\mA$ \\
-$\displaystyle \mA_{:, i}$ & Column $i$ of matrix $\mA$ \\
-$\displaystyle \etA_{i, j, k}$ & Element $(i, j, k)$ of a 3-D tensor $\tA$\\
-$\displaystyle \tA_{:, :, i}$ & 2-D slice of a 3-D tensor\\
-$\displaystyle \erva_i$ & Element $i$ of the random vector $\rva$ \\
-\end{tabular}
-\egroup
-\vspace{0.25cm}
+Overall, due to the limits imposed by time constraints and computational power, we were only able to
+train our model for $600000$ steps, significantly lower than the recommended $4000000$ steps (a
+common benchmark across RL literature to successfully beat one level of Space Invaders); as a
+result, our graphs are less than optimal. However, fascinating (and promising!) results still
+appeared.
+
+\subsection{Dueling DDQN Metrics}
+
+We start by analyzing the Dueling DDQN model's performance on Space Invaders. The key difference
+between \texttt{base-s1} and \texttt{base-s2} lie in frame stacking; \texttt{base-s1} does not stack
+frames, while \texttt{base-s2} stacks four frames on top of each other. Intuitively, we would
+suspect that \texttt{base-s2} performs better, as the convolutional model learns consecutive state
+transitions. Indeed, this is somewhat corroborated by the loss, $Q$-values, and rewards.
+
+\begin{figure}
+    \centering
+    \begin{minipage}{0.45\textwidth}
+        \centering
+        \includegraphics[width=0.9\textwidth]{imgs/loss-base1.png} % first figure itself
+        \caption{\texttt{base-s1} Losses}
+        \label{fig:loss-base1}
+    \end{minipage}\hfill
+    \begin{minipage}{0.45\textwidth}
+        \centering
+        \includegraphics[width=0.9\textwidth]{imgs/loss-base2.png} % second figure itself
+        \caption{\texttt{base-s2} Losses}
+        \label{fig:loss-base2}
+    \end{minipage}
+\end{figure}
+
+For both loss values (Figures \ref{fig:loss-base1} and \ref{fig:loss-base2}), they appear relatively
+stagnant, with \texttt{base-s2} showing slight increases. While this doesn't fit our usual intuition
+of losses, the graphs do appear sensible given the consideration of RL and our lower training steps.
+With temporal-difference loss, we compute not the difference between a ground-truth value and our
+predicted value, but rather the difference between our current predicted value and the predicted
+value of the next state. As a result, until our model is well trained, the values of loss should
+remain relatively stagnant; especially given the number of steps needed ($4000000$) versus the
+number of steps taken ($600000$), as well as the high complexity of Space Invaders as a whole, it
+would make sense that the model still has a lot to learn (Note: the losses for the \texttt{base-s1}
+model start at $300000$ rather than $0$, since we unfortunately did not set up metrics logging until
+halfway through training).
+
+To verify that learning is actually occurring, we inspect the $Q$-values of the models over time
+(Figures \ref{fig:q-base1} and \ref{fig:q-base2}).
+\begin{figure}
+    \centering
+    \begin{minipage}{0.45\textwidth}
+        \centering
+        \includegraphics[width=0.9\textwidth]{imgs/q-base1.png} % first figure itself
+        \caption{\texttt{base-s1} Q values}
+        \label{fig:q-base1}
+    \end{minipage}\hfill
+    \begin{minipage}{0.45\textwidth}
+        \centering
+        \includegraphics[width=0.9\textwidth]{imgs/q-base2.png} % second figure itself
+        \caption{\texttt{base-s2} Q values}
+        \label{fig:q-base2}
+    \end{minipage}
+\end{figure}
+
+Here we see rather promising results. We evaluate the sum of the $Q$-values over a set collection of
+states over time, and see how the model values each state. As such, our intuition suggests that over
+time, as the model learns the benefits of entering each state, the $Q$-values in the states should
+increase. Our models demonstrate this feature; over time, we see a steady increase in the sum of the
+$Q$-values. Interestingly, potentially due to the robustness modifications provided by the Dueling
+Double DQN structure and the modified loss function, our models appear to successfully avoid
+becoming stuck in local minima during training. In \texttt{base-s2}'s $Q$-values, even though they
+initially decrease as the model explores detrimental states (note the small dip at the beginning),
+the model recovers and manages to properly evaluate $Q$-values.
+
+Finally, we see the results over time of each model (Figures \ref{fig:rewards-base1} and
+\ref{fig:rewards-base2}).
+\begin{figure}
+    \centering
+    \begin{minipage}{0.45\textwidth}
+        \centering
+        \includegraphics[width=0.9\textwidth]{imgs/rewards-base1.png} % first figure itself
+        \caption{\texttt{base-s1} Rewards}
+        \label{fig:rewards-base1}
+    \end{minipage}\hfill
+    \begin{minipage}{0.45\textwidth}
+        \centering
+        \includegraphics[width=0.9\textwidth]{imgs/rewards-base2.png} % second figure itself
+        \caption{\texttt{base-s2} Rewards}
+        \label{fig:rewards-base2}
+    \end{minipage}
+\end{figure}
+
+Here, although progress is slow, we can see a clear trend. Over time, the models gradually learn
+trends within the games, and how to utilize certain aspects. A qualitative analysis here provides
+better insights into the model's progress. At the start of training, inspection of the model's
+behavior is similar to what we expect (see GIFs in action here: \url{https://imgur.com/a/m6fDYD0}).
+The model generally gravitates towards the left shield of the environment state, as that has
+provided the best temporary rewards as the model gradually explores the state space. However, the
+model has no insights on the importance of prioritizing the Mothership, the benefits of exploration
+away from the left side, and general dodging of the shots; it is truly just a random model.
+
+However, over time the model gradually grows its knowledge of the state space, and learns certain
+important features (see GIFs in action here: \url{https://imgur.com/a/gzdgcw3}). First, the model
+starts to explore elsewhere; once the first shield is gone, there is no point in hovering around
+there, so the model grows the ability to explore other aspects of the field. Indeed, in the last
+example, the model moves all the way to the right-most side. More importantly, the model learns the
+importance of dodging shots; although not overly effective and sometimes sporadically getting hit,
+the model generally senses the negative effects of the shots, and makes an effort to dodge them.
+Perhaps most impressively, the model learns the importance of prioritizing the Mothership. Whenever
+a Mothership appears, the model makes a concerted effort to move toward the Mothership; while not
+always successful (sometimes, the model runs directly into shots), the model understands the reward
+benefits, and sometimes impressively is able to hit it (not once, but twice in the last example). 
+
+Over our $600000$ training steps, we achieved a maximum reward of $790$ (bottom GIF), one that we're
+very pleasantly surprised with, given the warning of $4000000$ steps needed to pass the level.
+Perhaps more impressively, the model managed this in not three lives, but one single life. Given
+more time, we would love the explore the capabilities of the model after millions of training steps.
+
+\subsection{Shared Model}
+
+Here we first inspect the ability of the state representation model to properly map values.
+Unfortunately, our results here were far from stellar. As it seems, the loss values for both the
+State-to-State Translations and Delta Mappings did not provide promising results (Figures
+\ref{fig:s2s-loss} and \ref{fig:delta-loss}). 
+
+\begin{figure}
+    \centering
+    \begin{minipage}{0.45\textwidth}
+        \centering
+        \includegraphics[width=0.9\textwidth]{imgs/S2S-loss.png} % first figure itself
+        \caption{State-to-State Translation Loss}
+        \label{fig:s2s-loss}
+    \end{minipage}\hfill
+    \begin{minipage}{0.45\textwidth}
+        \centering
+        \includegraphics[width=0.9\textwidth]{imgs/Delta-loss.png} % second figure itself
+        \caption{Delta Mappings Loss}
+        \label{fig:delta-loss}
+    \end{minipage}
+\end{figure}
+
+We note that the state-to-state model converges on a local minima; it finds it far more rewarding
+to model just the static elements of each game than to actively try to represent changes in the
+model. Any attempt at modeling moving ships are likely undone by future layers, making it extremely
+difficult to converge further. We see that loss no longer decreases and stays relatively constant.
+
+Like the state to state, the delta mapping model converges to a local minima and does not decreases
+its losses very much. The difference is that it converges on a static image of what appears to be
+probability distributions of the ship and enemies; clear white streaks can be seen where enemies
+typically appear and where the ship moves around. Again, it remains static with no decreasing loss.
+
+Due to computational constraints, we were unable to provide meaningful results for either the latent
+spaces or combination methods. Due to the sheer intensity of especially the combination methods, our
+model trained a measly $10$ steps over the course of an entire hour; in such a small time frame, no
+remotely reasonable results were possible.
+
+Personal time constraints also limited our ability to integrate our state mappings with the rest of
+the model; as a result, we could only perform training on a naive, direct learning state
+representation (i.e. no states were translated between games). Despite this, our results are rather
+optimistic:
+
+\begin{figure}
+    \centering
+    \begin{minipage}{0.45\textwidth}
+        \centering
+        \includegraphics[width=0.9\textwidth]{imgs/loss-joint-da.png} % first figure itself
+        \caption{Joint Model (DA) Loss}
+        \label{fig:loss-joint-da}
+    \end{minipage}\hfill
+    \begin{minipage}{0.45\textwidth}
+        \centering
+        \includegraphics[width=0.9\textwidth]{imgs/loss-joint-si.png} % second figure itself
+        \caption{Joint Model (SI) Loss}
+        \label{fig:loss-joint-si}
+    \end{minipage}
+\end{figure}
+
+We note that the loss functions (Figures \ref{fig:loss-joint-da} and \ref{fig:loss-joint-si}) behave
+rather similarly across all the models we created; it seems to decrease a bit towards the beginning
+but flatten out in the middle of training. There also seems to be a high variation in loss, as shown
+by how many spikes are in the graphs.
+
+However, what is more interesting about the joint models is their Q functions (Figures
+\ref{fig:q-joint-da} and \ref{fig:q-joint-si}):
+
+\begin{figure}
+    \centering
+    \begin{minipage}{0.45\textwidth}
+        \centering
+        \includegraphics[width=0.9\textwidth]{imgs/q-joint-da.png} % first figure itself
+        \caption{Joint Model (DA) Q Values}
+        \label{fig:q-joint-da}
+    \end{minipage}\hfill
+    \begin{minipage}{0.45\textwidth}
+        \centering
+        \includegraphics[width=0.9\textwidth]{imgs/q-joint-si.png} % second figure itself
+        \caption{Joint Model (SI) Q Values}
+        \label{fig:q-joint-si}
+    \end{minipage}
+\end{figure}
 
 
-\centerline{\bf Calculus}
-\bgroup
-\def\arraystretch{1.5}
-\begin{tabular}{p{1.25in}p{3.25in}}
-% NOTE: the [2ex] on the next line adds extra height to that row of the table.
-% Without that command, the fraction on the first line is too tall and collides
-% with the fraction on the second line.
-$\displaystyle\frac{d y} {d x}$ & Derivative of $y$ with respect to $x$\\ [2ex]
-$\displaystyle \frac{\partial y} {\partial x} $ & Partial derivative of $y$ with respect to $x$ \\
-$\displaystyle \nabla_\vx y $ & Gradient of $y$ with respect to $\vx$ \\
-$\displaystyle \nabla_\mX y $ & Matrix derivatives of $y$ with respect to $\mX$ \\
-$\displaystyle \nabla_\tX y $ & Tensor containing derivatives of $y$ with respect to $\tX$ \\
-$\displaystyle \frac{\partial f}{\partial \vx} $ & Jacobian matrix $\mJ \in \R^{m\times n}$ of $f: \R^n \rightarrow \R^m$\\
-$\displaystyle \nabla_\vx^2 f(\vx)\text{ or }\mH( f)(\vx)$ & The Hessian matrix of $f$ at input point $\vx$\\
-$\displaystyle \int f(\vx) d\vx $ & Definite integral over the entire domain of $\vx$ \\
-$\displaystyle \int_\sS f(\vx) d\vx$ & Definite integral with respect to $\vx$ over the set $\sS$ \\
-\end{tabular}
-\egroup
-\vspace{0.25cm}
+In terms of Q functions, both joint models seem to spike in the beginning, jumping from a negative
+to positive value; this exhibits the same resilience with Q-values as the individual model.
+Afterwards, they see steady linear growth, which is not uncommon among our models; perhaps what is
+surprising is that even with the alternating environments, the model is capable of generally
+increasing its $Q$-value estimations.
 
-\centerline{\bf Probability and Information Theory}
-\bgroup
-\def\arraystretch{1.5}
-\begin{tabular}{p{1.25in}p{3.25in}}
-$\displaystyle P(\ra)$ & A probability distribution over a discrete variable\\
-$\displaystyle p(\ra)$ & A probability distribution over a continuous variable, or over
-a variable whose type has not been specified\\
-$\displaystyle \ra \sim P$ & Random variable $\ra$ has distribution $P$\\% so thing on left of \sim should always be a random variable, with name beginning with \r
-$\displaystyle  \E_{\rx\sim P} [ f(x) ]\text{ or } \E f(x)$ & Expectation of $f(x)$ with respect to $P(\rx)$ \\
-$\displaystyle \Var(f(x)) $ &  Variance of $f(x)$ under $P(\rx)$ \\
-$\displaystyle \Cov(f(x),g(x)) $ & Covariance of $f(x)$ and $g(x)$ under $P(\rx)$\\
-$\displaystyle H(\rx) $ & Shannon entropy of the random variable $\rx$\\
-$\displaystyle \KL ( P \Vert Q ) $ & Kullback-Leibler divergence of P and Q \\
-$\displaystyle \mathcal{N} ( \vx ; \vmu , \mSigma)$ & Gaussian distribution %
-over $\vx$ with mean $\vmu$ and covariance $\mSigma$ \\
-\end{tabular}
-\egroup
-\vspace{0.25cm}
+The reward function trends provide the most notable results (Figures \ref{fig:rewards-joint-da} and
+\ref{fig:rewards-joint-si}):
 
-\centerline{\bf Functions}
-\bgroup
-\def\arraystretch{1.5}
-\begin{tabular}{p{1.25in}p{3.25in}}
-$\displaystyle f: \sA \rightarrow \sB$ & The function $f$ with domain $\sA$ and range $\sB$\\
-$\displaystyle f \circ g $ & Composition of the functions $f$ and $g$ \\
-  $\displaystyle f(\vx ; \vtheta) $ & A function of $\vx$ parametrized by $\vtheta$.
-  (Sometimes we write $f(\vx)$ and omit the argument $\vtheta$ to lighten notation) \\
-$\displaystyle \log x$ & Natural logarithm of $x$ \\
-$\displaystyle \sigma(x)$ & Logistic sigmoid, $\displaystyle \frac{1} {1 + \exp(-x)}$ \\
-$\displaystyle \zeta(x)$ & Softplus, $\log(1 + \exp(x))$ \\
-$\displaystyle || \vx ||_p $ & $\normlp$ norm of $\vx$ \\
-$\displaystyle || \vx || $ & $\normltwo$ norm of $\vx$ \\
-$\displaystyle x^+$ & Positive part of $x$, i.e., $\max(0,x)$\\
-$\displaystyle \1_\mathrm{condition}$ & is 1 if the condition is true, 0 otherwise\\
-\end{tabular}
-\egroup
-\vspace{0.25cm}
+\begin{figure}
+    \centering
+    \begin{minipage}{0.45\textwidth}
+        \centering
+        \includegraphics[width=0.9\textwidth]{imgs/rewards-joint-da.png} % first figure itself
+        \caption{Joint Model (DA) Rewards}
+        \label{fig:rewards-joint-da}
+    \end{minipage}\hfill
+    \begin{minipage}{0.45\textwidth}
+        \centering
+        \includegraphics[width=0.9\textwidth]{imgs/rewards-joint-si.png} % second figure itself
+        \caption{Joint Model (SI) Rewards}
+        \label{fig:rewards-joint-si}
+    \end{minipage}
+\end{figure}
+
+The Joint Space-Invaders model hits about 60 reward value with 800 episodes, whereas \texttt{base2}
+only hit that mark at about $1250$ episodes (a bit of data was lost for \texttt{base1}, making it
+seem like it converges faster than it does). On the other hand, Demon Attack averaged at about $40$
+reward value at 400 episodes, whereas base Demon Attack was around $50$. We see slightly faster and
+slower convergences respectively, though it is unclear what would happen if the model trained even
+longer or, if it is within a margin of error. Either way, we remain cautiously optimistic about the
+potential results of our model; we see definitive strategy changes between the two models, and
+believe that shared experience probably trains just as well, if not better, than standard baseline
+models. More tests are necessary to test the method's efficacy, but visually we can see some shared
+knowledge informing decisions on both games.
 
 
+\section{Challenges}
 
-\section{Final instructions}
-Do not change any aspects of the formatting parameters in the style files.
-In particular, do not modify the width or length of the rectangle the text
-should fit into, and do not change font sizes (except perhaps in the
-\textsc{References} section; see below). Please note that pages should be
-numbered.
+Overall, our project presented significantly more challenges than expected.
 
-\section{Preparing PostScript or PDF files}
+Perhaps the first we encountered was the sheer complexity of reinforcement learning research,
+combined with our naivete and lack of appreciation of its scope. As a result, the focus of our
+project shifted significantly over time. Our original idea came from the Actionable Models paper
+(linked in the introduction); with a combination of hindsight experience replay and actionable
+models on offline reinforcement learning datasets collected from robotic arms, we wished to
+re-implement key aspects of the paper and hopefully modify the architecture to apply to board games,
+such as Chess and Shogi. 
 
-Please prepare PostScript or PDF files with paper size ``US Letter'', and
-not, for example, ``A4''. The -t
-letter option on dvips will produce US Letter files.
+Unfortunately, as we quickly realized, our knowledge of reinforcement learning, robotics, and board
+games were all severely lacking. As we continued research on the topic, comprehending the novel
+architectures in the papers themselves proved extremely difficult, let alone implementing them.
+After a fruitless week of bashing our heads against robotics and board games research papers, we
+decided to shift our idea toward an Atari-focused RL model.
 
-Consider directly generating PDF files using \verb+pdflatex+
-(especially if you are a MiKTeX user).
-PDF figures must be substituted for EPS figures, however.
+This proved a little easier to digest, but still presented major problems. At this point, we began
+the RL section of the course, which aided in our understanding of the papers; we understood key
+concepts from Deep Q-Learning and Policy Gradient Learning methods, and better understood how the
+models trained. However, the sheer complexity of reinforcement learning papers still existed.
+Moreover, while most RL papers provided pseudocode for the implementations of their algorithms, many
+aspects were greatly unspecified, and converting the ideas into tangible code proved a great
+challenge. Even though some online resources were provided, we found it extremely difficult to
+parse, due to either poor/missing documentation, or significant optimizations that resulted in
+almost unparseable code (i.e. OpenAI's baseline implementations); moreover, the vast majority of
+models existed in PyTorch, while our familiarity lied completely in the domain of Tensorflow.
 
-Otherwise, please generate your PostScript and PDF files with the following commands:
-\begin{verbatim}
-dvips mypaper.dvi -t letter -Ppdf -G0 -o mypaper.ps
-ps2pdf mypaper.ps mypaper.pdf
-\end{verbatim}
+Here too emerged the second major problem: computational resources. Although we began implementing
+separate baseline RL models in an attempt to form a baseline, it proved exceedingly difficult to
+verify the results of our implementations. Because the models don't provide that many meaningful
+metrics, and training steps often vary greatly in their success, we were unable to detect bugs in
+our implementation (either the loss function or train function, usually), wasting significant hours
+on revising our models.
 
-\subsection{Margins in LaTeX}
+Even after we formulated a proper model, we lacked the computational resources to train each to
+their full extent; despite multiple attempts to set up a Google Cloud Compute engine to train our
+agents, we were unable to optimize the benefits of a GPU, and were forced to train completely
+locally. As a result, the maximum amount of time-steps that we could feasibly devote to each model
+happened to be around $600K$ steps, which fell significantly below the suggested $4M$ steps. The
+baseline and joint models thus did not fully train, yielding subpar visualizations.
 
-Most of the margin problems come from figures positioned by hand using
-\verb+\special+ or other commands. We suggest using the command
-\verb+\includegraphics+
-from the graphicx package. Always specify the figure width as a multiple of
-the line width as in the example below using .eps graphics
-\begin{verbatim}
-   \usepackage[dvips]{graphicx} ...
-   \includegraphics[width=0.8\linewidth]{myfile.eps}
-\end{verbatim}
-or % Apr 2009 addition
-\begin{verbatim}
-   \usepackage[pdftex]{graphicx} ...
-   \includegraphics[width=0.8\linewidth]{myfile.pdf}
-\end{verbatim}
-for .pdf graphics.
-See section~4.4 in the graphics bundle documentation (\url{http://www.ctan.org/tex-archive/macros/latex/required/graphics/grfguide.ps})
+Moreover, our formulated state representations ended up being significantly more complex than
+expected; although we could train the naive state representations (i.e. direct learning,
+state-to-state translations), they didn't end up yielding positive results, so we had to revamp our
+model architecture with additional steps. The final combination method we formulated ended up
+suffering the fate of lacking computational resources; when attempting to train our behemoth on the
+environment, we only trained on $10$ steps in an entire hour. Without significantly more compute,
+training and testing the model proved impossible. Thus, we were forced to default to training the
+joint model on only the naive direct mapping on shared states. Although our results were slightly
+promising, the sheer complexity and requisite compute meant that we were unable to acquire
+substantive evaluations on the efficacy of our models.
 
-A number of width problems arise when LaTeX cannot properly hyphenate a
-line. Please give LaTeX hyphenation hints using the \verb+\-+ command.
-
-\subsubsection*{Author Contributions}
-If you'd like to, you may include  a section for author contributions as is done
-in many journals. This is optional and at the discretion of the authors.
-
-\subsubsection*{Acknowledgments}
-Use unnumbered third level headings for the acknowledgments. All
-acknowledgments, including those to funding agencies, go at the end of the paper.
+Finally, while it did not prove an insurmountable bottleneck, our relative inexperience with
+building end-to-end deep and reinforcement learning systems in general proved a major hurdle. While
+we had general experience with implementing certain Tensorflow features from the homework
+assignments, we did not know how to construct support code and integration architecture from
+scratch. For instance, we focused primarily on getting a model up and running to train; however, we
+had not set up appropriate checkpoint, visualization, logging, and metrics architectures to properly
+evaluate our functionality. Especially in Deep Q-Networks, where temporal-difference loss doesn't
+provide meaningful results until very late into the training process (or even ever), logging the
+loss values is not particularly useful. More importantly, we did not thoroughly investigate
+image/GIF storage nor saving model checkpoints at first, which resulted in losing the progress on
+hundreds of thousands of steps over a few models.
 
 
-\bibliography{iclr2021_conference}
-\bibliographystyle{iclr2021_conference}
+\section{Reflection}
 
-\appendix
-\section{Appendix}
-You may include other additional sections here.
+Although we did not manage to completely implement the shared state representation originally
+proposed, we are still generally optimistic on the results of our experiments. Once we recognized
+the sheer complexity and instability of reinforcement learning, our baseline and target goals
+reflected the desire to formulate a working Deep Q-Network to adequately play the Atari games (here,
+specifically Space Invaders). To that end, we met our base and target goals: we originally set out
+simply to replicate results from the seminal Mnih et al. 2013 Deep Q-Network, and hopefully extend
+some basic state representations. As we researched more, we discovered the Dueling Double Deep
+Q-Network, and set that as a target goal to implement after recognizing the relative increase in
+complexity compared to the naive DQN.
+
+Our baseline DQN models also performed significantly better than we had expected; after seeing the
+suggested $4M$ steps to train the model to success on Space Invaders, we were not optimistic at all
+about the ability of our model to achieve moderate success on the Atari game. Despite that, after
+just around $350K$ steps, our model demonstrated a great performance on a single episodic life,
+reaching $790$ points! More importantly though, our model appeared to learn key mechanics of the
+game. After around $200K$ steps, our model began to learn to explore beyond the left-most shield.
+Moreover, the model's dodging capabilities proved significantly more non-random than we had
+expected; and finally, the prioritization of the Mothership was a pleasant surprise.
+
+Given more time, we would have liked to explore more reinforcement learning agents and attempted
+different models over a more reasonable number of iterations (e.g. $1M-2M$). For instance, we did
+not have the time or compute to explore shared experiences with policy-gradient methods; especially
+given their current prominence in RL literature, a more thorough investigation and comparison of
+Deep Q-Learning and Policy Gradient methods would have been a worthwhile experience. As mentioned
+before, further explorations into more complicated shared domain experience buffers during training
+would be insightful as well.
+
+On a personal level, this final project has been immensely beneficial to our growth as both deep
+learning engineers/programmers and researchers. After undergoing many iterations and setbacks
+throughout the process, we've learned to appreciate the complexity of many recent advancements in
+DL/RL research and the difficulty in turning theoretical pseudocode implementations into concrete
+models. Moreover, we've developed important skills in setting up and executing a deep learning
+system from scratch, and cultivated proper deep learning (and general) programming practices, from
+frequent checkpoints and logging to proper visualization and model presentation techniques.
+
+After struggling to no avail with many research papers, we also feel more confident in assessing the
+state-of-the-art literature in deep/reinforcement learning, understanding foundational models and
+architectures, and most importantly modifying and tinkering with current implementations.  Novel
+papers no longer seem impossibly daunting; after some effort, we now feel capable of demystifying
+key concepts and turning them into tangible implementations. 
+
+In all, the entire process has been greatly rewarding and fascinating, and after the final project
+we would love to continue exploring various RL architectures, playing with them, and (hopefully!)
+contributing meaningful results to the scientific community.
+
+
+\section{Conclusion}
+
+Recent advancements in reinforcement learning give promising signals for the growth of the field;
+many efficient and robust models have been developed to tackle various challenges, from sandbox (yet
+still fundamentally significant) environments like Atari and board games, to real and meaningful
+technological developments, such as robotics and self-driving cars. In each of these instances,
+however, exorbitant amounts of training and evaluation were required, resulting in prohibitively
+long training times for each individual model.
+
+In this project, we sought first to re-implement---with minor adjustments---the foundational
+reinforcement learning agent of Dueling Double Deep Q-Networks as an educational experience in
+state-of-the-art reinforcement learning models. Then, we researched potential models to alleviate
+the training time through shared experiences, and explored architectures to generalize state
+representations into a common latent space. We ran initial training steps on a joint experience
+buffer between two similar environments---Atari's Space Invaders and Demon Attack games---to test
+the validity of a naive shared experience; while incomplete, we show cautiously optimistic learning
+results, providing a proof-of-concept possibility with even a naive implementation. With further
+formulation and benchmarking, we hope that shared experiences may be used in different environments
+such as robotics to alleviate training time and aggregate learning of similar tasks.
+
 
 \end{document}
