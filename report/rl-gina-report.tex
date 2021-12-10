@@ -1,0 +1,671 @@
+\documentclass{article} % For LaTeX2e
+\usepackage{rl-gina-report,times}
+
+% Optional math commands from https://github.com/goodfeli/dlbook_notation.
+\input{math_commands.tex}
+
+\usepackage{hyperref}
+\usepackage{url}
+\usepackage{graphicx}
+
+
+\title{RL-GInER: Generalized Information Experience Replay for Deep Reinforcement Learning}
+
+% Authors must not appear in the submitted version. They should be hidden
+% as long as the \iclrfinalcopy macro remains commented out below.
+% Non-anonymous submissions will be rejected without review.
+
+\author{\textbf{Richard Tang (rtang26), Kenta Yoshii (kyoshii), Raymond Dai (rdai4),
+    \& Akash Singirikonda (asingir5)} \\
+Brown University\\
+Providence, RI 02912, USA \\
+\texttt{\{richard\_tang, kenta\_yoshii, raymond\_dai, akash\_singirikonda\}@brown.edu}
+}
+
+
+% \author{Antiquus S.~Hippocampus, Natalia Cerebro \& Amelie P. Amygdale \thanks{ Use footnote for providing further information
+% about author (webpage, alternative address)---\emph{not} for acknowledging
+% funding agencies.  Funding acknowledgements go at the end of the paper.} \\
+% Department of Computer Science\\
+% Cranberry-Lemon University\\
+% Pittsburgh, PA 15213, USA \\
+% \texttt{\{hippo,brain,jen\}}@cs.cranberry-lemon.edu \\
+% \And
+% Ji Q. Ren \& Yevgeny LeNet \\
+% Department of Computational Neuroscience \\
+% University of the Witwatersrand \\
+% Joburg, South Africa \\
+% \texttt{\{robot,net\}@wits.ac.za} \\
+% \AND
+% Coauthor \\
+% Affiliation \\
+% Address \\
+% \texttt{email}
+% }
+
+% The \author macro works with any number of authors. There are two commands
+% used to separate the names and addresses of multiple authors: \And and \AND.
+%
+% Using \And between authors leaves it to \LaTeX{} to determine where to break
+% the lines. Using \AND forces a linebreak at that point. So, if \LaTeX{}
+% puts 3 of 4 authors names on the first line, and the last on the second
+% line, try using \AND instead of \And before the third author name.
+
+\newcommand{\fix}{\marginpar{FIX}}
+\newcommand{\new}{\marginpar{NEW}}
+
+\iclrfinalcopy % Uncomment for camera-ready version, but NOT for submission.
+\begin{document}
+
+
+\maketitle
+
+% \begin{abstract}
+  % We propose a shared state representation 
+% The abstract paragraph should be indented 1/2~inch (3~picas) on both left and
+% right-hand margins. Use 10~point type, with a vertical spacing of 11~points.
+% The word \textsc{Abstract} must be centered, in small caps, and in point size 12. Two
+% line spaces precede the abstract. The abstract must be limited to one
+% paragraph.
+% \end{abstract}
+
+\section{Introduction}
+
+Recent research in deep reinforcement learning has yielded great advancements, with successes from
+simple games like Backgammon (\cite{TDGammon}) and Atari (\cite{Mnih}) to incredibly complex tasks
+such as beating Lee Sedol, a 9-dan professional at Go (\cite{AlphaGo}) and multi-step robotics tasks
+(\cite{ActionableModels}). However, deep learning models already take significant resources to
+train, and reinforcement learning agents worsen this issue by an order of magnitude. For instance,
+AlphaGo trained over 72 million matches in 72 hours, using over 6000 TPUs for self-play simulation,
+and 64 GPUs and 19 CPUs for parameter updates; in total, training AlphaGo cost \$35 million. In a
+model-free environment, DeepMind's Agent57 (\cite{Agent57}) required $10$ billion episodic steps to
+train.
+
+Clearly, deep reinforcement learning agents are incredibly computationally expensive to train. In
+this project, we attempt to alleviate this cost. From experience, humans are relatively adept at
+picking up new skills; for instance, proficiency in one first-person shooter game (e.g. Valorant)
+would likely transfer to other games with similar play styles and mechanics, such as CS:GO or Apex.
+Intuitively, this aligns with our notion of \textit{shared experience}, or experience transfer;
+skillsets applicable to one area should theoretically transfer to another similar area, greatly
+lessening the initial learning and startup overhead required.
+
+To that end, we first aim to develop a deep reinforcement learning agent---based on current
+reinforcement learning literature---capable of playing Atari games, then attempt to employ a
+\textit{shared experience buffer} while training to simultaneously learn Atari games with similar
+styles; here we choose top-down shooter games, specifically Space Invaders and Demon Attack.
+
+
+
+\section{Background}
+
+Mnih et. al. provide the initial Deep Q-Learning Network capable of successfully playing Atari
+(\cite{Mnih}) that forms the background of our naive Deep Q-Learning (DQN) reinforcement agent.
+
+In classic reinforcement learning (RL), an \textbf{agent} interacts with an \textbf{environment},
+and attempts to maximize cumulative \textbf{reward}. Specifically, given a state space $S$ of all
+valid states in an environment, and an action space $A$ of all valid actions, an agent adopts a
+\textbf{policy} \[
+  \pi: S\longrightarrow A, \pi(s_t)=a_t
+\] that picks an available action $a\in A$ from a current state $s \in S$. In general, state and
+action spaces may be either discrete or continuous spaces; moreover, taking an action $a_t$ in a
+state $s_t$ can either deterministically or stochastically \textbf{transition} into a state
+$s_{t+1}$. With Atari games, both the state and action spaces are discrete, and the environment
+transitions is deterministic. A \textbf{reward} value is assigned to these transitions; that is, a
+function \[
+  R: S\times A\times S\longrightarrow \R,\ R(s_t, a_t, s_{t+1})=r_t
+\] determines the reward of a certain transition from one state into another.
+
+The central goal of reinforcement learning is to maximize cumulative reward over an entire episode
+in the environment. Because RL agents do not have access to unlimited future rewards, to update and
+train our model we turn to the \textbf{finite discounted future reward} function over a time
+interval $T$: \[
+  R_T(\tau)=\sum_{t'=t}^{T} \gamma^{t-t'}r_t
+,\] where $\tau=(s_{t'}, a_{t'}, s_{t'+1}, a_{t'}+1, \ldots)$ is a trajectory of state-action pairs,
+and $\gamma\in (0,1)$ is a discount factor on future rewards. Intuitively, we wish to prioritize
+current rewards over future rewards; mathematically, we need reward values to converge. Reward
+factors into the \textbf{value} of a state, computed by a function \[
+  V^{\pi}:S\longrightarrow \R, V^{\pi}(s_t)=v_t
+.\] Two functions---a value function and a $Q$ function---are particularly important in optimizing
+future reward, and play a central role in reinforcement learning algorithms. They are given by
+\begin{align*}
+  V^{\pi}(s)&=E_{\tau\sim \pi}[R(\tau)\mid s_0=s]\\
+  Q^{\pi}(s, a)&=E_{\tau\sim \pi}[R(\tau)\mid s_0=s, a_0=a]
+.\end{align*} The value function determines the expected reward of starting in a state
+$s$ following a certain policy $\pi$, while the $Q$ function determines the expected reward of
+starting in a state $s$, taking an action $a$, then following a certain policy $\pi$. Their
+respective \textbf{Bellman equations} provide more insight, and format in a more accessible manner
+for code implementation:
+\begin{align*}
+    V^{\pi}(s)&= E_{a\sim \pi, P(s'\mid s,a)}[R(s, \cdot , \cdot )+\gamma V^{\pi}(\cdot )] \\
+              &= \max_a \sum_{s'\in S} P(s'\mid s,a)E[R(s,a,s')+\gamma V^\pi(s')] \\
+    Q^\pi(s) &= E_{P(s'\mid s,a)}[R(s,a,\cdot)+\gamma V^{\pi}(\cdot )] \\
+             &= \sum_{s'\in S} P(s'\mid s,a)[R(s,a,s')+\gamma V^\pi(s')]
+.\end{align*}
+
+Determining these functions greatly facilitate RL agents in solving an environment; given an optimal
+$Q$ function $Q^*$, an optimal policy $\pi^*$ would simply select the action with the highest $Q$
+value in a state $s$; that is, \[
+  \pi^*(s)=\max_a Q^*(s,a)
+.\] Unfortunately, with many scenarios our environments become too unwieldy to provide exact value
+and $Q$ functions; thus, modern reinforcement learning attempts to use function approximators to
+estimate these values. As deep learning models become increasingly sophisticated, applications to
+reinforcement learning become promising. With the $Q$ function, a neural network (a $Q$-network) may
+be used as a non-linear approximator, i.e. $Q(s, a; \theta)\approx Q^*(s,a)$. To train a
+$Q$-network, we want to minimize distance from the target $Q$-function: \[
+  L_t(\theta_t)=E[(y_t-Q(s,a;\theta_t))^2]
+,\] where $y_t=E[r_t+\gamma\max_{a'} Q(s',a';\theta_{t+1})]$ is the target $Q$ function. This is the
+\textbf{temporal-difference loss}; that is, the loss between our current $Q$ network and the $Q$
+network of the next step, which functions as our target $Q$ network.
+
+A few modifications are made. To clip error values and reduce variance, we employ the Huber loss
+function instead of MSE loss. That is, \[
+  L_{\delta}(y_{true}, y_{pred})=\left\{\begin{array}{rl} \frac{1}{2}(y_{true}-y_{pred})^2, &
+      ~\text{for}~ \left| y_{true}-y_{pred} \right|  \le \delta \\ \delta(\left| y_{true}-y_{pred}
+      \right|-\frac{1}{2}\delta ), &~\text{otherwise}~\end{array}\right.
+.\] Additionally, Minh et. al. 2015 (\url{https://www.nature.com/articles/nature14236.pdf}) provide
+a method of stabilizing variance of the training; because a naive DQN trains solely on the next
+step's $Q$-network, variance is extremely high, and the model is susceptible to local minima traps.
+To reduce this, a stabilizing $\hat{Q}$ network is introduced to prevent the model from
+over-deviating from previous training weights. This $\hat{Q}$ network will share the weights as the
+original $Q$ network, except it is not trained; $\hat{Q}$ will only update its values to the
+original $Q$ network periodically instead of every step, so by using it as an anchor in the loss
+function, the original $Q$ network's training variance is greatly reduced. Our loss function then
+becomes \[
+  L_t(\theta_t)=E[(y_t-Q(s,a;\theta_t))^2]
+,\] where $y_t=E[r_t+\gamma \hat{Q}(s', \max_{a'}(s', a';\theta_{t+1}); \theta_{\hat{Q}})]$. This
+architecture of a second stabilizing $\hat{Q}$ target network is called a \textbf{double deep
+Q-network}, or \textbf{DDQN}. 
+
+Finally, Wang et. al. 2016 (\url{https://arxiv.org/pdf/1511.06581.pdf}) provide an improvement to
+the naive $Q$-network. Instead of learning directly for a $Q$-function approximator, the $Q$-network
+is split up into approximating functions $V(s)$ and $A(s)$, or the value function and
+\textbf{advantage} function respectively. The advantage function determines the \textit{relative}
+value of taking a certain action in a state, rather than the absolute value: \[
+  A^\pi(s, a)=Q^\pi(s, a)-V^\pi(s)
+.\] This reduces variance by comparatively determining the value of a state, rather than absolutely
+predicting it; thus, in extreme states a large $Q$ value is avoided. The ``dueling'' architectures
+of the value and advantage function can theoretically learn valuable (and not valuable) states
+without having to learn the effect of each action in each state, as the naive $Q$-network would;
+this comes as a result of the model learning each separate network, and indirectly predicting the
+$Q$-values. The $Q$-function becomes \[
+  Q(s, a)=V(s)+\left( A(s,a) - \frac{1}{\left| \mathcal{A} \right| }\sum_{a'\in A}A(s,a') \right) 
+.\] This architecture of splitting up the $Q$-network into value $V$ and advantage $A$ streams is
+called a \textbf{dueling deep Q-network}, or \textbf{Dueling DQN}. Combined with the DDQN, the final
+model is a \textbf{Dueling DDQN}.
+
+\section{Methodology}
+
+\begin{figure}[htpb]
+  \centering
+  \includegraphics[width=0.7\textwidth]{imgs/dueling.png}
+  \caption{Dueling vs. Naive DQN Architecture}
+  \label{fig:imgs-dueling-png}
+\end{figure}
+
+Our baseline Dueling DDQN agent follows a similar structure to the Mnih et al. 2015 network. An
+input image is passed through four convolutional layers: the first has 32 $8\times 8$ filters with
+stride $4$, the second has $64$ $4\times 4$ filters with stride $2$, and the third has $64$ $3\times
+3$ filters with stride $1$. After some experimentation, we decided to add a fourth convolutional
+layer with $1024$ $7\times 7$ filters with stride $1$; this provided more input weights for the
+value and advantage streams to work with. The output of the convolutional layers are then split up
+into $2$, one for each stream, and passed through a fully-connected dense layer; the value network
+outputs a single value, while the advantage network outputs an advantage value for each action in
+the action space.
+
+Taking inspiration from stochastic gradient descent, the temporal-difference loss function is
+applied in batches, rather than for each individual step. To ensure a more independent and
+identically distributed batch of past experiences, we maintain an \textbf{experience buffer} of
+previous experiences, from which we sample a batch. We then feed the batch into the loss function
+described above, then apply the gradients on our $Q$-network.
+
+This provides the baseline RL agent to train on Atari games; while some modifications were made,
+this is mostly in line with methods given in classic Deep RL papers. State representation of shared
+experiences is far trickier. At the heart of our learning process is one fundamental question: how
+do we convert an experience from one game to another? We intuitively understand that Space Invaders
+and Demon Attack have similar mechanics, that learning to dodge bullets in one game will help you
+dodge bullets in another, and hitting enemies in both boosts your scores. However, machines have no
+such understanding of states, and any architecture used to interpret the screen in one game will
+probably fail in the other because of the stark visual differences, animations that play, etc. As
+such, we want to develop a state representation such that we can somehow map an experience in one
+game to an experience in another. How this is done is easier said than done. We have attempted
+several different methods to encourage shared learning between the two games.
+
+\subsection{Direct Learning}
+By far the simplest way to attempt to learn from either experience is to ignore
+state representations entirely and train the DQN on experiences as if they came from the same game.
+This would involve running two games at once and having a shared experience buffer such that the
+model has a chance of learning from either game. This theoretically encourages the state
+interpreters---our Dueling DDQN---to focus on the similarities of the two games (movement, shooting,
+enemy targeting, etc) and forces it to learn ``core mechanics'' first. In theory, this would make
+early training more variant in the beginning but converge faster in both games as neither games get
+caught up in small details in each game and masters core mechanics. However, this naive approach
+still leaves a lot to be desired: with larger training sets and across more models, more variance is
+introduced into the state representations, and the model may struggle to find an underlying
+similarity with such differences. RL agents are already highly susceptible to local minima, and
+increasing variance only increases the possibility of catastrophic interference and model collapse.
+Moreover, although we preprocess the inputs (described in the Experiments section), no flexibility
+is provided in general; altering state shapes would completely negate the Dueling DDQN's
+convolutional architecture.
+
+\subsection{State Translation}
+Another issue with direct mapping results from fundamental differences in games; learning on one
+game (e.g. Demon Attack), with different animations and environment structures, may interfere with
+another game (e.g. Space Invaders) and the model's interpretation of potent features.  As such,
+another intuition is to somehow map one game screen to another. We assume that taking the same
+series of actions in one game (ie moving left, right, shooting, and pausing) has a direct
+``translation'' in the other game where the same series of actions were taken.  However, in practice,
+machines are not very good at learning this weak translation. A network trained to map images from
+one game to the other tends to focus on static, unchanging details (ie the floors, scores,
+decorative borders, etc). Any attempt for the network to learn something more interesting, like the
+ships' movements, will immediately be squashed by another frame where the ship is in another region.
+As such, this model converges to a local minimum where it is very good at capturing the static,
+unmoving objects but cannot map enemies, ships, or moving objects. Most of either screen is taken up
+by negative space, and since any loss function would have to give some form of scalar value to
+describe differences between two images, a model focusing just on static objects can have reasonably
+low loss for every frame. This is a lot easier to converge to than the complex model that tries to
+learn the nuances of ship movement. Simply put, one state does not directly map to another, even if
+the steps leading up to those two states were identical.
+
+\subsection{Latent Spaces}
+Another core idea is to develop a state latent space to learn from rather than learning from
+screens. Ideally, some model will encode information about both games to a vector of a common
+dimension. This would remove our screen size problem, and games would be training on a much more
+simple latent vector rather than complicated screens. More importantly, training a strong latent
+space allows our model to learn only from the principal components of the game, which lessens the
+likelihood that the model gets distracted by minor details and should stabilize training. As such,
+our novel idea was to learn a ``double autoencoder'' - a model capable of autoencoding both space
+invaders and demon attack. The model would alternate training between frames of demon attack and
+space invaders, tugging the gradient long until the model converges to some latent space capable of
+modelling both games. Using these latent spaces allows both models to learn on the same “domain”,
+making it easier to map states to each other. However, we have so far been preoccupied with states.
+Even if our autoencoder is perfect, who is to say that the latent space for space invaders matches
+that of demon attack? Maybe one has the first weight devoted to detecting ship movement while the
+other uses it to look at bullets. Learning from the autoencoder here could mean that a useful
+experience for one game could be mapping two completely irrelevant frames for another. We realize
+that it's not necessarily realistic states we are pursuing but realistic experiences.
+
+\subsection{Delta Mapping}
+In order to focus on the changes in experiences, we apply the state ``translation'' model to focus on
+changes between states rather than states themselves. For every action, we calculate a delta state
+function that subtracts the resulting state from the previous state, which should highlight the
+changes in states rather than focusing ons tactic objects. Our results, however, were once again
+less than promising. Our distribution is once again relatively static, this time having streaks
+where ships frequently appear and hover around. This is a result of something we are yet to mention
+about these models: overfitting for early episodes. Most of the initial training for these methods
+come before we have a trained Q network. As such, we are forced to train on random walks, which
+rarely get far and have very low step counts. This means our models are optimized to early states,
+like having the ship in the middle and paying attention to the first few enemies. Still, while this
+network also yielded negative results, it did tell us a lot about the early stages of the game. Even
+if we add a time value to encourage movement, we see that the local minima model converges to maps
+out where enemies typically are and where the ship typically is, which is still pretty useful
+information.
+
+
+
+
+
+% \bibitem{TDGammon}
+% \url{https://dl.acm.org/doi/10.1145/203330.203343}
+
+% \bibitem{Mnih}
+% \url{https://arxiv.org/pdf/1312.5602.pdf}
+
+% \bibitem{AlphaGo}
+% \url{https://www.nature.com/articles/nature16961}
+
+% \bibitem{ActionableModels}
+% \url{https://arxiv.org/pdf/2104.07749.pdf}
+
+% \bibitem{Agent57}
+% \url{https://arxiv.org/abs/2003.13350}
+
+
+ICLR requires electronic submissions, processed by
+\url{https://openreview.net/}. See ICLR's website for more instructions.
+
+If your paper is ultimately accepted, the statement {\tt
+  {\textbackslash}iclrfinalcopy} should be inserted to adjust the
+format to the camera ready requirements.
+
+The format for the submissions is a variant of the NeurIPS format.
+Please read carefully the instructions below, and follow them
+faithfully.
+
+\subsection{Style}
+
+Papers to be submitted to ICLR 2021 must be prepared according to the
+instructions presented here.
+
+%% Please note that we have introduced automatic line number generation
+%% into the style file for \LaTeXe. This is to help reviewers
+%% refer to specific lines of the paper when they make their comments. Please do
+%% NOT refer to these line numbers in your paper as they will be removed from the
+%% style file for the final version of accepted papers.
+
+Authors are required to use the ICLR \LaTeX{} style files obtainable at the
+ICLR website. Please make sure you use the current files and
+not previous versions. Tweaking the style files may be grounds for rejection.
+
+\subsection{Retrieval of style files}
+
+The style files for ICLR and other conference information are available online at:
+\begin{center}
+   \url{http://www.iclr.cc/}
+\end{center}
+The file \verb+iclr2021_conference.pdf+ contains these
+instructions and illustrates the
+various formatting requirements your ICLR paper must satisfy.
+Submissions must be made using \LaTeX{} and the style files
+\verb+iclr2021_conference.sty+ and \verb+iclr2021_conference.bst+ (to be used with \LaTeX{}2e). The file
+\verb+iclr2021_conference.tex+ may be used as a ``shell'' for writing your paper. All you
+have to do is replace the author, title, abstract, and text of the paper with
+your own.
+
+The formatting instructions contained in these style files are summarized in
+sections \ref{gen_inst}, \ref{headings}, and \ref{others} below.
+
+\section{General formatting instructions}
+\label{gen_inst}
+
+The text must be confined within a rectangle 5.5~inches (33~picas) wide and
+9~inches (54~picas) long. The left margin is 1.5~inch (9~picas).
+Use 10~point type with a vertical spacing of 11~points. Times New Roman is the
+preferred typeface throughout. Paragraphs are separated by 1/2~line space,
+with no indentation.
+
+Paper title is 17~point, in small caps and left-aligned.
+All pages should start at 1~inch (6~picas) from the top of the page.
+
+Authors' names are
+set in boldface, and each name is placed above its corresponding
+address. The lead author's name is to be listed first, and
+the co-authors' names are set to follow. Authors sharing the
+same address can be on the same line.
+
+Please pay special attention to the instructions in section \ref{others}
+regarding figures, tables, acknowledgments, and references.
+
+
+There will be a strict upper limit of 8 pages for the main text of the initial submission, with unlimited additional pages for citations. Note that the upper page limit differs from last year!Authors may use as many pages of appendices (after the bibliography) as they wish, but reviewers are not required to read these. During the rebuttal phase and for the camera ready version, authors are allowed one additional page for the main text, for a strict upper limit of 9 pages.
+
+\section{Headings: first level}
+\label{headings}
+
+First level headings are in small caps,
+flush left and in point size 12. One line space before the first level
+heading and 1/2~line space after the first level heading.
+
+\subsection{Headings: second level}
+
+Second level headings are in small caps,
+flush left and in point size 10. One line space before the second level
+heading and 1/2~line space after the second level heading.
+
+\subsubsection{Headings: third level}
+
+Third level headings are in small caps,
+flush left and in point size 10. One line space before the third level
+heading and 1/2~line space after the third level heading.
+
+\section{Citations, figures, tables, references}
+\label{others}
+
+These instructions apply to everyone, regardless of the formatter being used.
+
+\subsection{Citations within the text}
+
+Citations within the text should be based on the \texttt{natbib} package
+and include the authors' last names and year (with the ``et~al.'' construct
+for more than two authors). When the authors or the publication are
+included in the sentence, the citation should not be in parenthesis using \verb|\citet{}| (as
+in ``See \citet{Hinton06} for more information.''). Otherwise, the citation
+should be in parenthesis using \verb|\citep{}| (as in ``Deep learning shows promise to make progress
+towards AI~\citep{Bengio+chapter2007}.'').
+
+The corresponding references are to be listed in alphabetical order of
+authors, in the \textsc{References} section. As to the format of the
+references themselves, any style is acceptable as long as it is used
+consistently.
+
+\subsection{Footnotes}
+
+Indicate footnotes with a number\footnote{Sample of the first footnote} in the
+text. Place the footnotes at the bottom of the page on which they appear.
+Precede the footnote with a horizontal rule of 2~inches
+(12~picas).\footnote{Sample of the second footnote}
+
+\subsection{Figures}
+
+All artwork must be neat, clean, and legible. Lines should be dark
+enough for purposes of reproduction; art work should not be
+hand-drawn. The figure number and caption always appear after the
+figure. Place one line space before the figure caption, and one line
+space after the figure. The figure caption is lower case (except for
+first word and proper nouns); figures are numbered consecutively.
+
+Make sure the figure caption does not get separated from the figure.
+Leave sufficient space to avoid splitting the figure and figure caption.
+
+You may use color figures.
+However, it is best for the
+figure captions and the paper body to make sense if the paper is printed
+either in black/white or in color.
+\begin{figure}[h]
+\begin{center}
+%\framebox[4.0in]{$\;$}
+\fbox{\rule[-.5cm]{0cm}{4cm} \rule[-.5cm]{4cm}{0cm}}
+\end{center}
+\caption{Sample figure caption.}
+\end{figure}
+
+\subsection{Tables}
+
+All tables must be centered, neat, clean and legible. Do not use hand-drawn
+tables. The table number and title always appear before the table. See
+Table~\ref{sample-table}.
+
+Place one line space before the table title, one line space after the table
+title, and one line space after the table. The table title must be lower case
+(except for first word and proper nouns); tables are numbered consecutively.
+
+\begin{table}[t]
+\caption{Sample table title}
+\label{sample-table}
+\begin{center}
+\begin{tabular}{ll}
+\multicolumn{1}{c}{\bf PART}  &\multicolumn{1}{c}{\bf DESCRIPTION}
+\\ \hline \\
+Dendrite         &Input terminal \\
+Axon             &Output terminal \\
+Soma             &Cell body (contains cell nucleus) \\
+\end{tabular}
+\end{center}
+\end{table}
+
+\section{Default Notation}
+
+In an attempt to encourage standardized notation, we have included the
+notation file from the textbook, \textit{Deep Learning}
+\cite{goodfellow2016deep} available at
+\url{https://github.com/goodfeli/dlbook_notation/}.  Use of this style
+is not required and can be disabled by commenting out
+\texttt{math\_commands.tex}.
+
+
+\centerline{\bf Numbers and Arrays}
+\bgroup
+\def\arraystretch{1.5}
+\begin{tabular}{p{1in}p{3.25in}}
+$\displaystyle a$ & A scalar (integer or real)\\
+$\displaystyle \va$ & A vector\\
+$\displaystyle \mA$ & A matrix\\
+$\displaystyle \tA$ & A tensor\\
+$\displaystyle \mI_n$ & Identity matrix with $n$ rows and $n$ columns\\
+$\displaystyle \mI$ & Identity matrix with dimensionality implied by context\\
+$\displaystyle \ve^{(i)}$ & Standard basis vector $[0,\dots,0,1,0,\dots,0]$ with a 1 at position $i$\\
+$\displaystyle \text{diag}(\va)$ & A square, diagonal matrix with diagonal entries given by $\va$\\
+$\displaystyle \ra$ & A scalar random variable\\
+$\displaystyle \rva$ & A vector-valued random variable\\
+$\displaystyle \rmA$ & A matrix-valued random variable\\
+\end{tabular}
+\egroup
+\vspace{0.25cm}
+
+\centerline{\bf Sets and Graphs}
+\bgroup
+\def\arraystretch{1.5}
+
+\begin{tabular}{p{1.25in}p{3.25in}}
+$\displaystyle \sA$ & A set\\
+$\displaystyle \R$ & The set of real numbers \\
+$\displaystyle \{0, 1\}$ & The set containing 0 and 1 \\
+$\displaystyle \{0, 1, \dots, n \}$ & The set of all integers between $0$ and $n$\\
+$\displaystyle [a, b]$ & The real interval including $a$ and $b$\\
+$\displaystyle (a, b]$ & The real interval excluding $a$ but including $b$\\
+$\displaystyle \sA \backslash \sB$ & Set subtraction, i.e., the set containing the elements of $\sA$ that are not in $\sB$\\
+$\displaystyle \gG$ & A graph\\
+$\displaystyle \parents_\gG(\ervx_i)$ & The parents of $\ervx_i$ in $\gG$
+\end{tabular}
+\vspace{0.25cm}
+
+
+\centerline{\bf Indexing}
+\bgroup
+\def\arraystretch{1.5}
+
+\begin{tabular}{p{1.25in}p{3.25in}}
+$\displaystyle \eva_i$ & Element $i$ of vector $\va$, with indexing starting at 1 \\
+$\displaystyle \eva_{-i}$ & All elements of vector $\va$ except for element $i$ \\
+$\displaystyle \emA_{i,j}$ & Element $i, j$ of matrix $\mA$ \\
+$\displaystyle \mA_{i, :}$ & Row $i$ of matrix $\mA$ \\
+$\displaystyle \mA_{:, i}$ & Column $i$ of matrix $\mA$ \\
+$\displaystyle \etA_{i, j, k}$ & Element $(i, j, k)$ of a 3-D tensor $\tA$\\
+$\displaystyle \tA_{:, :, i}$ & 2-D slice of a 3-D tensor\\
+$\displaystyle \erva_i$ & Element $i$ of the random vector $\rva$ \\
+\end{tabular}
+\egroup
+\vspace{0.25cm}
+
+
+\centerline{\bf Calculus}
+\bgroup
+\def\arraystretch{1.5}
+\begin{tabular}{p{1.25in}p{3.25in}}
+% NOTE: the [2ex] on the next line adds extra height to that row of the table.
+% Without that command, the fraction on the first line is too tall and collides
+% with the fraction on the second line.
+$\displaystyle\frac{d y} {d x}$ & Derivative of $y$ with respect to $x$\\ [2ex]
+$\displaystyle \frac{\partial y} {\partial x} $ & Partial derivative of $y$ with respect to $x$ \\
+$\displaystyle \nabla_\vx y $ & Gradient of $y$ with respect to $\vx$ \\
+$\displaystyle \nabla_\mX y $ & Matrix derivatives of $y$ with respect to $\mX$ \\
+$\displaystyle \nabla_\tX y $ & Tensor containing derivatives of $y$ with respect to $\tX$ \\
+$\displaystyle \frac{\partial f}{\partial \vx} $ & Jacobian matrix $\mJ \in \R^{m\times n}$ of $f: \R^n \rightarrow \R^m$\\
+$\displaystyle \nabla_\vx^2 f(\vx)\text{ or }\mH( f)(\vx)$ & The Hessian matrix of $f$ at input point $\vx$\\
+$\displaystyle \int f(\vx) d\vx $ & Definite integral over the entire domain of $\vx$ \\
+$\displaystyle \int_\sS f(\vx) d\vx$ & Definite integral with respect to $\vx$ over the set $\sS$ \\
+\end{tabular}
+\egroup
+\vspace{0.25cm}
+
+\centerline{\bf Probability and Information Theory}
+\bgroup
+\def\arraystretch{1.5}
+\begin{tabular}{p{1.25in}p{3.25in}}
+$\displaystyle P(\ra)$ & A probability distribution over a discrete variable\\
+$\displaystyle p(\ra)$ & A probability distribution over a continuous variable, or over
+a variable whose type has not been specified\\
+$\displaystyle \ra \sim P$ & Random variable $\ra$ has distribution $P$\\% so thing on left of \sim should always be a random variable, with name beginning with \r
+$\displaystyle  \E_{\rx\sim P} [ f(x) ]\text{ or } \E f(x)$ & Expectation of $f(x)$ with respect to $P(\rx)$ \\
+$\displaystyle \Var(f(x)) $ &  Variance of $f(x)$ under $P(\rx)$ \\
+$\displaystyle \Cov(f(x),g(x)) $ & Covariance of $f(x)$ and $g(x)$ under $P(\rx)$\\
+$\displaystyle H(\rx) $ & Shannon entropy of the random variable $\rx$\\
+$\displaystyle \KL ( P \Vert Q ) $ & Kullback-Leibler divergence of P and Q \\
+$\displaystyle \mathcal{N} ( \vx ; \vmu , \mSigma)$ & Gaussian distribution %
+over $\vx$ with mean $\vmu$ and covariance $\mSigma$ \\
+\end{tabular}
+\egroup
+\vspace{0.25cm}
+
+\centerline{\bf Functions}
+\bgroup
+\def\arraystretch{1.5}
+\begin{tabular}{p{1.25in}p{3.25in}}
+$\displaystyle f: \sA \rightarrow \sB$ & The function $f$ with domain $\sA$ and range $\sB$\\
+$\displaystyle f \circ g $ & Composition of the functions $f$ and $g$ \\
+  $\displaystyle f(\vx ; \vtheta) $ & A function of $\vx$ parametrized by $\vtheta$.
+  (Sometimes we write $f(\vx)$ and omit the argument $\vtheta$ to lighten notation) \\
+$\displaystyle \log x$ & Natural logarithm of $x$ \\
+$\displaystyle \sigma(x)$ & Logistic sigmoid, $\displaystyle \frac{1} {1 + \exp(-x)}$ \\
+$\displaystyle \zeta(x)$ & Softplus, $\log(1 + \exp(x))$ \\
+$\displaystyle || \vx ||_p $ & $\normlp$ norm of $\vx$ \\
+$\displaystyle || \vx || $ & $\normltwo$ norm of $\vx$ \\
+$\displaystyle x^+$ & Positive part of $x$, i.e., $\max(0,x)$\\
+$\displaystyle \1_\mathrm{condition}$ & is 1 if the condition is true, 0 otherwise\\
+\end{tabular}
+\egroup
+\vspace{0.25cm}
+
+
+
+\section{Final instructions}
+Do not change any aspects of the formatting parameters in the style files.
+In particular, do not modify the width or length of the rectangle the text
+should fit into, and do not change font sizes (except perhaps in the
+\textsc{References} section; see below). Please note that pages should be
+numbered.
+
+\section{Preparing PostScript or PDF files}
+
+Please prepare PostScript or PDF files with paper size ``US Letter'', and
+not, for example, ``A4''. The -t
+letter option on dvips will produce US Letter files.
+
+Consider directly generating PDF files using \verb+pdflatex+
+(especially if you are a MiKTeX user).
+PDF figures must be substituted for EPS figures, however.
+
+Otherwise, please generate your PostScript and PDF files with the following commands:
+\begin{verbatim}
+dvips mypaper.dvi -t letter -Ppdf -G0 -o mypaper.ps
+ps2pdf mypaper.ps mypaper.pdf
+\end{verbatim}
+
+\subsection{Margins in LaTeX}
+
+Most of the margin problems come from figures positioned by hand using
+\verb+\special+ or other commands. We suggest using the command
+\verb+\includegraphics+
+from the graphicx package. Always specify the figure width as a multiple of
+the line width as in the example below using .eps graphics
+\begin{verbatim}
+   \usepackage[dvips]{graphicx} ...
+   \includegraphics[width=0.8\linewidth]{myfile.eps}
+\end{verbatim}
+or % Apr 2009 addition
+\begin{verbatim}
+   \usepackage[pdftex]{graphicx} ...
+   \includegraphics[width=0.8\linewidth]{myfile.pdf}
+\end{verbatim}
+for .pdf graphics.
+See section~4.4 in the graphics bundle documentation (\url{http://www.ctan.org/tex-archive/macros/latex/required/graphics/grfguide.ps})
+
+A number of width problems arise when LaTeX cannot properly hyphenate a
+line. Please give LaTeX hyphenation hints using the \verb+\-+ command.
+
+\subsubsection*{Author Contributions}
+If you'd like to, you may include  a section for author contributions as is done
+in many journals. This is optional and at the discretion of the authors.
+
+\subsubsection*{Acknowledgments}
+Use unnumbered third level headings for the acknowledgments. All
+acknowledgments, including those to funding agencies, go at the end of the paper.
+
+
+\bibliography{iclr2021_conference}
+\bibliographystyle{iclr2021_conference}
+
+\appendix
+\section{Appendix}
+You may include other additional sections here.
+
+\end{document}
