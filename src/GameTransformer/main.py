@@ -47,6 +47,26 @@ class GraphableLoss(keras.losses.Loss):
         return fig
 
 
+def env_screenshot(gen_set):
+    sample_space, sample_demon = gen_set
+
+    fig, (ax1, ax2) = plt.subplots(1, 2)
+    space_frame = np.reshape(sample_space.numpy()[3], SCREEN_SHAPE)
+    demon_frame = np.reshape(sample_demon.numpy()[5], SCREEN_SHAPE)
+
+    ax1.imshow(space_frame, cmap='gray')
+    ax2.imshow(demon_frame, cmap='gray')
+
+    ax1.set_title("Space Invaders Environment")
+    ax2.set_title("Demon Attack Environment")
+
+    ax1.axis('off')
+    ax2.axis('off')
+
+    fig.suptitle('Environment Screenshots')
+    return fig
+
+
 def animate_game(game_tensors, ax):
     game_numpy = game_tensors.numpy()
     if game_numpy.shape[1] > FLATTEN_SCREEN:
@@ -133,7 +153,8 @@ def train_encoder():
 
 # Press the green button in the gutter to run the script.
 if __name__ == '__main__':
-
-    train_encoder()
+    fig = env_screenshot(populate_sets(space_env, demon_env, 1, 100))
+    plt.show()
+    # train_encoder()
 
 # See PyCharm help at https://www.jetbrains.com/help/pycharm/
