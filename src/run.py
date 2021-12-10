@@ -188,7 +188,7 @@ def train(
     eval_writer = csv.writer(open(f"{rwd_dir}/{rwd_name}-evals.csv", "w+", newline=""))
     header = ["episode_rewards", "episode_lengths"]
     if env2:
-        header.append("episode_rewards2", "episode_lengths2")
+        header += ["episode_rewards2", "episode_lengths2"]
     eval_writer.writerow(header)
 
     # Write average Q-values to csv file
