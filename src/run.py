@@ -281,9 +281,15 @@ def load_states(state_file):
 def main(args):
     print(args)
     env_id = f"{args.env}NoFrameskip-v4"
-    env = make_atari_model(env_id, clip_rewards=False, frame_stack=args.stack)
+    env = make_atari_model(
+        env_id, clip_rewards=False, frame_stack=args.stack, max_episode_steps=1500
+    )
     eval_env = make_atari_model(
-        env_id, clip_rewards=False, episode_life=False, frame_stack=args.stack
+        env_id,
+        clip_rewards=False,
+        episode_life=False,
+        frame_stack=args.stack,
+        max_episode_steps=5000,
     )
 
     if args.load:
