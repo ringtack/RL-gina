@@ -61,51 +61,64 @@ def graph_rewards(ax, reward_file, groups=0, logscale=False):
 
 if __name__ == '__main__':
     sns.set_theme()
-    fig1, ax1 = plt.subplots(2)
-    graph_losses(ax1[0], "base-si/LOSS_FINAL.csv")
-    graph_losses(ax1[1], "base-si/LOSS_FINAL.csv", groups=50)
-    fig1.suptitle("Losses for Base1")
+    # fig1, ax1 = plt.subplots(2)
+    # graph_losses(ax1[0], "base-si/LOSS_FINAL.csv")
+    # graph_losses(ax1[1], "base-si/LOSS_FINAL.csv", groups=50)
+    # fig1.suptitle("Losses for Base1")
+    #
+    # fig2, ax2 = plt.subplots(2)
+    # graph_losses(ax2[0], "base-si2/td-loss-12-09-16-52.csv")
+    # graph_losses(ax2[1], "base-si2/td-loss-12-09-16-52.csv", groups=50)
+    # fig2.suptitle("Losses for Base2")
+    #
+    # fig3, ax3 = plt.subplots(2)
+    # graph_q(ax3[0], "base-si/QVALS_FINAL.csv")
+    # graph_q(ax3[1], "base-si/QVALS_FINAL.csv", groups=50)
+    # fig3.suptitle("Q for Base1")
+    #
+    # fig4, ax4 = plt.subplots(2)
+    # graph_q(ax4[0], "base-si2/qvals-12-09-16-52.csv")
+    # graph_q(ax4[1], "base-si2/qvals-12-09-16-52.csv", groups=50)
+    # fig4.suptitle("Q for Base2")
+    #
+    # fig5, ax5 = plt.subplots(2)
+    # graph_rewards(ax5[0], "../rwds/base-si/FINAL_REWARDS_600000.csv")
+    # graph_rewards(ax5[1], "../rwds/base-si/FINAL_REWARDS_600000.csv", groups=50)
+    # fig5.suptitle("Rewards for Base1")
 
-    fig2, ax2 = plt.subplots(2)
-    graph_losses(ax2[0], "base-si2/td-loss-12-09-16-52.csv")
-    graph_losses(ax2[1], "base-si2/td-loss-12-09-16-52.csv", groups=50)
-    fig2.suptitle("Losses for Base2")
-
-    fig3, ax3 = plt.subplots(2)
-    graph_q(ax3[0], "base-si/QVALS_FINAL.csv")
-    graph_q(ax3[1], "base-si/QVALS_FINAL.csv", groups=50)
-    fig3.suptitle("Q for Base1")
-
-    fig4, ax4 = plt.subplots(2)
-    graph_q(ax4[0], "base-si2/qvals-12-09-16-52.csv")
-    graph_q(ax4[1], "base-si2/qvals-12-09-16-52.csv", groups=50)
-    fig4.suptitle("Q for Base2")
-
-    fig5, ax5 = plt.subplots(2)
-    graph_rewards(ax5[0], "../rwds/base-si/FINAL_REWARDS_600000.csv")
-    graph_rewards(ax5[1], "../rwds/base-si/FINAL_REWARDS_600000.csv", groups=50)
-    fig5.suptitle("Rewards for Base1")
-
-    fig6, ax6 = plt.subplots(2)
-    graph_rewards(ax6[0], "../rwds/base-si2/reward-12-09-16-52.csv")
-    graph_rewards(ax6[1], "../rwds/base-si2/reward-12-09-16-52.csv", groups=50)
-    fig6.suptitle("Rewards for Base2")
-
-    fig7, ax7 = plt.subplots(2)
-    graph_losses(ax7[0], "shared/td-loss-12-10-00-16.csv", logscale=True)
-    graph_losses(ax7[1], "shared/td-loss-12-10-00-16.csv", groups=50, logscale=True)
-    fig7.suptitle("Losses for Shared Model")
-
-    fig8, ax8 = plt.subplots(2)
-    graph_q(ax8[0], "shared/qvals-12-10-00-16.csv", logscale=True)
-    graph_q(ax8[1], "shared/qvals-12-10-00-16.csv", groups=50, logscale=True)
-    fig8.suptitle("Q for Shared Model")
-
+    # fig6, ax6 = plt.subplots(2)
+    # graph_rewards(ax6[0], "../rwds/base-si2/reward-12-09-16-52.csv")
+    # graph_rewards(ax6[1], "../rwds/base-si2/reward-12-09-16-52.csv", groups=50)
+    # fig6.suptitle("Rewards for Base2")
+    #
+    # fig7, ax7 = plt.subplots(2)
+    # graph_losses(ax7[0], "shared/td-loss-12-10-00-16.csv", logscale=True)
+    # graph_losses(ax7[1], "shared/td-loss-12-10-00-16.csv", groups=50, logscale=True)
+    # fig7.suptitle("Losses for Shared Model")
+    #
+    # fig8, ax8 = plt.subplots(2)
+    # graph_q(ax8[0], "shared/qvals-12-10-00-16.csv", logscale=True)
+    # graph_q(ax8[1], "shared/qvals-12-10-00-16.csv", groups=50, logscale=True)
+    # fig8.suptitle("Q for Shared Model")
+    #
     # fig9, ax9 = plt.subplots(2)
-    # graph_rewards(ax9[0], "../rwds/shared/reward-12-10-00-13-evals.csv")
-    # graph_rewards(ax9[1], "../rwds/shared/reward-12-10-00-13-evals.csv", groups=50)
+    # graph_rewards(ax9[0], "../rwds/shared/reward-12-10-00-16.csv")
+    # graph_rewards(ax9[1], "../rwds/shared/reward-12-10-00-16.csv", groups=50)
     # fig9.suptitle("Q for Shared Model")
+    #
+    fig10, ax10 = plt.subplots(2)
+    graph_losses(ax10[0], "base-da/td-loss-12-09-17-14.csv", logscale=True)
+    graph_losses(ax10[1], "base-da/td-loss-12-09-17-14.csv", groups=50, logscale=True)
+    fig10.suptitle("Losses for Base DA Model")
 
-    plt.show()
+    fig11, ax11 = plt.subplots(2)
+    graph_q(ax11[0], "base-da/qvals-12-09-17-14.csv", logscale=True)
+    graph_q(ax11[1], "base-da/qvals-12-09-17-14.csv", groups=50, logscale=True)
+    fig11.suptitle("Q for Base DA Model")
+
+    fig12, ax12 = plt.subplots(2)
+    graph_rewards(ax12[0], "../rwds/base-da/reward-12-09-17-14.csv")
+    graph_rewards(ax12[1], "../rwds/base-da/reward-12-09-17-14.csv", groups=50)
+    fig12.suptitle("Rewards for Base DA Model")
 
     plt.show()
