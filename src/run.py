@@ -24,6 +24,7 @@ from settings import (
     SAVE_FREQ,
     TARGET_UPDATE,
 )
+from shared_agent import SharedAgent
 
 tf.config.list_physical_devices("GPU")
 
@@ -34,7 +35,7 @@ def openai_atari_model(env_id):
     return AtariPreprocessing(env)
 
 
-def evaluate(model, env, vid_dir, vid_name, step, vid=True):
+def evaluate(model, env, vid_dir, vid_name, step, vid=True, second=False):
     state = env.reset()
     env.render()
     done = False
@@ -47,7 +48,10 @@ def evaluate(model, env, vid_dir, vid_name, step, vid=True):
     while not done:
         if vid:
             frames.append(Image.fromarray(env.render(mode="rgb_array")))
-        action = model.act(state, t)
+        if second:
+            _, action = model.act(state, state, t)
+        else:
+            action, _ = model.act(state, state, t)
         state, rwd, done, _ = env.step(action)
         reward += rwd
         t += 1
@@ -55,7 +59,8 @@ def evaluate(model, env, vid_dir, vid_name, step, vid=True):
     print(f"Episode reward: {reward}\t Episode length: {t}")
 
     if vid:
-        filename = f"{vid_dir}/{vid_name}-{step}.gif"
+        add_env2 = "_env2" if second else ""
+        filename = f"{vid_dir}/{vid_name}-{step}{add_env2}.gif"
         with open(filename, "wb+") as f:
             im = frames[0]
             im.save(
@@ -86,10 +91,12 @@ def save_model(model, t, weight_dir, weight_name):
     return filename, pickled_filename
 
 
-def load_model(filename, env, exp, stack):
+def load_model(filename, env, exp, stack, env2=None):
     """
     Loads weights and experiences from specified file. Do not include extensions!
     """
+    if env2 is not None:
+        model = SharedAgent(env, env2, stack)
     model = Agent(env, stack)
 
     print(f"Loading model from {filename}...")
@@ -142,7 +149,18 @@ def get_qvals(model, viz_states):
     return sum_q, avg_q
 
 
-def train(model, env, eval_env, steps, args, viz_states, vid=True):
+def train(
+    model,
+    env,
+    eval_env,
+    steps,
+    args,
+    viz_states,
+    vid=True,
+    env2=None,
+    eval_env2=None,
+    viz_states2=None,
+):
     # Load args names
     weight_dir = args.weight_dir
     weight_name = args.weight_name
@@ -150,24 +168,39 @@ def train(model, env, eval_env, steps, args, viz_states, vid=True):
     vid_name = args.vid_name
     rwd_dir = args.rwd_dir
     rwd_name = args.rwd_name
+    if env2:
+        rwd_name2 = f"{args.rwd_name}-env2"
     viz_dir = args.viz_dir
     viz_name = args.viz_name
     td_name = args.td_loss
 
     # Initialize experience buffer if not already
     if steps == 1 and len(model.experience) < model.experience.capacity:
-        model.initialize_experiences(env)
+        model.initialize_experiences()
     # Store episode rewards and lengths
     episode_rewards = [0.0]
     episode_lengths = [0]
+    if env2:
+        episode_rewards2 = [0.0]
+        episode_lengths2 = [0]
 
     # Provide constant csv writer for evaluation
     eval_writer = csv.writer(open(f"{rwd_dir}/{rwd_name}-evals.csv", "w+", newline=""))
-    eval_writer.writerow(["episode_rewards", "episode_lengths"])
+    header = ["episode_rewards", "episode_lengths"]
+    if env2:
+        header += ["episode_rewards2", "episode_lengths2"]
+    eval_writer.writerow(header)
 
     # Write average Q-values to csv file
     viz_writer = csv.writer(open(f"{viz_dir}/{viz_name}.csv", "w+", newline=""))
-    viz_writer.writerow(["episode", "sum q_values", "average q_values"])
+    header = ["episode1", "sum q_values", "average q_values"]
+    viz_writer.writerow(header)
+    if env2:
+        viz_writer2 = csv.writer(
+            open(f"{viz_dir}/{viz_name}-env2.csv", "w+", newline="")
+        )
+        header = ["episode2", "sum q_values2", "average q_values2"]
+        viz_writer2.writerow(header)
 
     # Write losses to csv file
     td_writer = csv.writer(open(f"{viz_dir}/{td_name}.csv", "w+", newline=""))
@@ -175,11 +208,15 @@ def train(model, env, eval_env, steps, args, viz_states, vid=True):
 
     # Store max reward; if we want to store video, store frames as well
     max_reward = 0.0
-    if vid:
-        frames = []
+    frames = []
+    if env2:
+        max_reward2 = 0.0
+        frames2 = []
 
     # Start training! Train for NUM_EPISODES steps
     state = env.reset()
+    if env2:
+        state2 = env2.reset()
 
     for t in range(steps, NUM_EPISODES + 1):
         # Handle keyboard interrupt
@@ -188,23 +225,38 @@ def train(model, env, eval_env, steps, args, viz_states, vid=True):
             if t % SAVE_FREQ == 0:
                 save_model(model, t, weight_dir, weight_name)
                 save_rewards(episode_rewards, episode_lengths, rwd_dir, rwd_name)
+                save_rewards(episode_rewards2, episode_lengths2, rwd_dir, rwd_name2)
 
-            # if we want video, store frame
-            if vid:
-                frames.append(Image.fromarray(env.render(mode="rgb_array")))
+            # store frame
+            frames.append(Image.fromarray(env.render(mode="rgb_array")))
+            if env2:
+                frames2.append(Image.fromarray(env2.render(mode="rgb_array")))
 
             with tf.GradientTape() as tape:
                 # Get next action
-                action = model.act(state, t)
+                if env2:
+                    action, action2 = model.act(state, state2, t)
+                else:
+                    action = model.act(state, t)
 
                 # Get next state, and add to experience buffer
                 next_state, reward, done, _ = env.step(action)
                 model.remember(state, action, reward, next_state, done)
+                if env2:
+                    next_state2, reward2, done2, _ = env2.step(action2)
+                    model.remember(state2, action2, reward2, next_state2, done2)
+
+                # Update states
                 state = next_state
+                if env2:
+                    state2 = next_state2
 
                 # Update episode reward and length; if done, reset game
                 episode_rewards[-1] += reward
                 episode_lengths[-1] += 1
+                if env2:
+                    episode_lengths2[-1] += reward2
+                    episode_lengths2[-1] += 1
 
                 if done:
                     print(
@@ -245,6 +297,50 @@ def train(model, env, eval_env, steps, args, viz_states, vid=True):
                     viz_writer.writerow([len(episode_rewards), sum_q, avg_q])
                     episode_rewards.append(0.0)
                     episode_lengths.append(0)
+
+                if env2:
+                    if done2:
+                        print(
+                            f"Episode 2 complete. Average reward: {episode_rewards2[-1] / episode_lengths2[-1]}"
+                        )
+                        print(
+                            f"\tReward: {episode_rewards2[-1]}\tEpisode length: {episode_lengths2[-1]}"
+                        )
+                        state2 = env2.reset()
+                        # If max reward is less than current episode reward, update
+                        if max_reward2 < episode_rewards2[-1]:
+                            max_reward2 = episode_rewards2[-1]
+                            # If we want, save gif of max reward
+                            if vid:
+                                filename = f"{vid_dir}/{vid_name}-env2_max.gif"
+                                with open(filename, "wb+") as f:
+                                    im = frames2[0]
+                                    im.save(
+                                        f,
+                                        save_all=True,
+                                        #  optimize=True,
+                                        duration=40,
+                                        append_images=frames2[1:],
+                                    )
+                                    print(
+                                        "=============================================================================="
+                                    )
+                                    print(
+                                        f"==========New record [env 2]! Saved to {filename}.=========="
+                                    )
+                                    print(
+                                        "=============================================================================="
+                                    )
+                        if vid:
+                            frames2 = []
+
+                        sum_q2, avg_q2 = get_qvals(model, viz_states2)
+                        info = [len(episode_rewards2), sum_q2, avg_q2]
+
+                        viz_writer2.writerow(info)
+                        episode_rewards2.append(0.0)
+                        episode_lengths2.append(0)
+
                 if t % LEARNING_FREQ == 0:
                     loss = model.optimize_model()
                     if t % (LEARNING_FREQ * 10) == 0:
@@ -266,10 +362,19 @@ def train(model, env, eval_env, steps, args, viz_states, vid=True):
             if t % EVAL_STEPS == 0:
                 print(f"Evaluating model after {t} steps...")
                 reward, length = evaluate(model, eval_env, vid_dir, vid_name, t)
-                eval_writer.writerow([reward, length])
+                if env2:
+                    reward2, length2 = evaluate(
+                        model, eval_env2, vid_dir, f"{vid_name}-env2", t
+                    )
+                evals = [reward, length]
+                if env2:
+                    evals.append([reward2, length2])
+                eval_writer.writerow(evals)
         except KeyboardInterrupt:
             save_model(model, t, weight_dir, weight_name)
             save_rewards(episode_rewards, episode_lengths, rwd_dir, rwd_name)
+            if env2:
+                save_rewards(episode_rewards2, episode_lengths2, rwd_dir, rwd_name2)
             sys.exit(1)
 
 
@@ -281,29 +386,75 @@ def load_states(state_file):
 def main(args):
     print(args)
     env_id = f"{args.env}NoFrameskip-v4"
-    env = make_atari_model(env_id, clip_rewards=False, frame_stack=args.stack)
-    eval_env = make_atari_model(
-        env_id, clip_rewards=False, episode_life=False, frame_stack=args.stack
+    if args.env2:
+        env2_id = f"{args.env2}NoFrameskip-v4"
+
+    env = make_atari_model(
+        env_id, clip_rewards=False, frame_stack=args.stack, max_episode_steps=1500
     )
+    env2 = None
+    if args.env2:
+        env2 = make_atari_model(
+            env2_id, clip_rewards=False, frame_stack=args.stack, max_episode_steps=1500
+        )
+
+    eval_env = make_atari_model(
+        env_id,
+        clip_rewards=False,
+        episode_life=False,
+        frame_stack=args.stack,
+        max_episode_steps=5000,
+    )
+    eval_env2 = None
+    if env2:
+        eval_env2 = make_atari_model(
+            env2_id,
+            clip_rewards=False,
+            episode_life=False,
+            frame_stack=args.stack,
+            max_episode_steps=5000,
+        )
 
     if args.load:
-        model, steps = load_model(args.load, env, args.exp, args.stack)
+        model, steps = load_model(args.load, env, args.exp, args.stack, env2=env2)
     else:
-        model = Agent(env, args.stack)
+        if env2:
+            model = SharedAgent(env, env2, args.stack)
+        else:
+            model = Agent(env, args.stack)
         steps = 1
     if args.steps != 1:
         steps = args.steps
 
     viz_states = load_states(args.states)
+    viz_states2 = None
+    if env2:
+        viz_states2 = load_states(args.states2)
 
     print("Starting training...")
-    train(model, env, eval_env, steps, args, viz_states)
+    train(
+        model,
+        env,
+        eval_env,
+        steps,
+        args,
+        viz_states,
+        env2=env2,
+        eval_env2=eval_env2,
+        viz_states2=viz_states2,
+    )
+
     print(f"Training done. Evaluating after {NUM_EPISODES} steps...")
 
     print("Type anything to evaluate model (EOF to exit)")
     for _ in sys.stdin:
         reward, length = evaluate(model, eval_env, args.vid_dir, args.vid_name, "END")
         print(f"Reward: {reward}\tEpisode Length: {length}")
+        if env2:
+            reward2, length2 = evaluate(
+                model, eval_env2, args.vid_dir, f"{args.vid_name}-env2", "END"
+            )
+            print(f"Reward [Env 2]: {reward2}\tEpisode Length: {length2}")
 
 
 if __name__ == "__main__":
@@ -314,17 +465,28 @@ if __name__ == "__main__":
     parser.add_argument(
         "--env",
         action="store",
-        #  default="SpaceInvaders",
+        default="SpaceInvaders",
         #  default="VideoPinball",
-        default="DemonAttack",
+        #  default="DemonAttack",
         help="Atari game (supported games: Pong, Cartpole, SpaceInvaders, Breakout, BeamRider)",
+    )
+
+    parser.add_argument(
+        "--env2",
+        action="store",
+        default="",
+        help="Specify second environment, if we want shared experience buffer.",
+    )
+
+    parser.add_argument(
+        "--stack", action="store_true", default=False, help="Frame stack"
     )
 
     parser.add_argument(
         "--model",
         action="store",
-        default="dqn",
-        help="RL model (supported models: dqn, ddqn, dddqn)",
+        default="dddqn",
+        help="RL model (supported models: dddqn)",
     )
 
     parser.add_argument(
@@ -367,15 +529,18 @@ if __name__ == "__main__":
     parser.add_argument(
         "--exp", action="store_true", default=False, help="Load experience"
     )
-    parser.add_argument(
-        "--stack", action="store_true", default=False, help="Frame stack"
-    )
 
     parser.add_argument(
         "--states",
         action="store",
         default="viz/q_states.pickle",
         help="Visualization frames",
+    )
+    parser.add_argument(
+        "--states2",
+        action="store",
+        default="",
+        help="Visualization frames for second environment",
     )
 
     parser.add_argument(
@@ -402,4 +567,5 @@ if __name__ == "__main__":
         default=1,
         help="Specify number of steps [TESTING ONLY]",
     )
+
     main(parser.parse_args())
