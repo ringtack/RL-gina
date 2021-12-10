@@ -131,20 +131,20 @@ class Agent:
 
         return action
 
-    def initialize_experiences(self, env):
+    def initialize_experiences(self):
         """
         Initialize experience buffer with BUFFER_SIZE number of random experiences.
         """
-        state = env.reset()
+        state = self.env.reset()
         done = False
 
         for _ in range(BUFFER_SIZE):
             # randomly initialize replay memory to capacity N
-            action = env.action_space.sample()
-            next_state, reward, done, _ = env.step(action)
+            action = self.env.action_space.sample()
+            next_state, reward, done, _ = self.env.step(action)
             self.remember(state, action, reward, next_state, done)
 
-            state = env.reset() if done else next_state
+            state = self.env.reset() if done else next_state
 
         print("Experience buffer initialized...")
 
