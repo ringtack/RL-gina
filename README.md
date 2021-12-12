@@ -176,6 +176,7 @@ Feel free to adjust.
 
 Yay! In general, generated gif files may be inspected in
 `src/viz/good_gifs`. Here's our favorite:
+
 ![POGGIES MODEL](src/viz/good_gifs/POGGIES_MODEL_350000.gif)
 
 (Unfortunately, the preprocessing and built-in Atari frame 
