@@ -175,5 +175,8 @@ Feel free to adjust.
 ## Results
 
 Yay! In general, generated gif files may be inspected in
-`src/viz/good_gifs`. I'll figure out how to render GIFs in a README.md
-eventually. For now, you may inspect those.
+`src/viz/good_gifs`. Here's our favorite:
+![POGGIES MODEL](src/viz/good_gifs/POGGIES_MODEL_350000.gif)
+
+(Unfortunately, the preprocessing and built-in Atari frame 
+skipping meant that enemy shots didn't appear 😞)
