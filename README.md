@@ -18,8 +18,16 @@ baseline Atari Dueling DDQN implementation ([Mnih et al.
 2016](https://arxiv.org/abs/1511.06581)) for a novel approach to shared
 experience replay in deep reinforcement learning.
 
+## Presentation
+
 The final technical report may be found
 [here](https://github.com/ringtack/RL-gina/blob/main/report/rl-gina-report.pdf).
+
+Our final video presentation can be found [here](https://youtu.be/udUF2SU7c8Y).
+
+Check out our poster:
+![ReDER Poster](ReDER.jpg)
+
 
 ## Installation
 
