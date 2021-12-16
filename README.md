@@ -18,8 +18,16 @@ baseline Atari Dueling DDQN implementation ([Mnih et al.
 2016](https://arxiv.org/abs/1511.06581)) for a novel approach to shared
 experience replay in deep reinforcement learning.
 
+## Presentation
+
 The final technical report may be found
 [here](https://github.com/ringtack/RL-gina/blob/main/report/rl-gina-report.pdf).
+
+Our final video presentation can be found [here](https://youtu.be/udUF2SU7c8Y).
+
+Check out our poster:
+![ReDER Poster](ReDER.jpg)
+
 
 ## Installation
 
@@ -167,5 +175,9 @@ Feel free to adjust.
 ## Results
 
 Yay! In general, generated gif files may be inspected in
-`src/viz/good_gifs`. I'll figure out how to render GIFs in a README.md
-eventually. For now, you may inspect those.
+`src/viz/good_gifs`. Here's our favorite:
+
+![POGGIES MODEL](src/viz/good_gifs/POGGIES_MODEL_350000.gif)
+
+(Unfortunately, the preprocessing and built-in Atari frame 
+skipping meant that enemy shots didn't appear 😞)
